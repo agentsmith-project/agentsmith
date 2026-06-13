@@ -23,6 +23,7 @@ spec:
     spec:
       restartPolicy: Never
       serviceAccountName: agentsmith-app
+{{AGENTSMITH_NODE_SUBSTRATE_CA_INIT_CONTAINERS}}
       containers:
         - name: agentsmith-product-schema-bootstrap
           image: "{{API_IMAGE}}"
@@ -36,6 +37,9 @@ spec:
                 secretKeyRef:
                   name: {{AGENTSMITH_APP_REF}}
                   key: DATABASE_URL
+{{AGENTSMITH_NODE_SUBSTRATE_CA_ENV}}
+{{AGENTSMITH_NODE_SUBSTRATE_CA_VOLUME_MOUNTS}}
+{{AGENTSMITH_NODE_SUBSTRATE_CA_VOLUMES}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -64,6 +68,7 @@ spec:
         agentsmith.mbos.dev/checksum-app-secrets: "{{AGENTSMITH_APP_SECRETS_CHECKSUM}}"
     spec:
       serviceAccountName: agentsmith-app
+{{AGENTSMITH_NODE_SUBSTRATE_CA_INIT_CONTAINERS}}
       containers:
         - name: web
           image: "{{WEB_IMAGE}}"
@@ -121,6 +126,9 @@ spec:
                 secretKeyRef:
                   name: {{AGENTSMITH_APP_REF}}
                   key: MONGO_DB_NAME
+{{AGENTSMITH_NODE_SUBSTRATE_CA_ENV}}
+{{AGENTSMITH_NODE_SUBSTRATE_CA_VOLUME_MOUNTS}}
+{{AGENTSMITH_NODE_SUBSTRATE_CA_VOLUMES}}
 ---
 apiVersion: v1
 kind: Service
@@ -169,6 +177,7 @@ spec:
         agentsmith.mbos.dev/checksum-app-secrets: "{{AGENTSMITH_APP_SECRETS_CHECKSUM}}"
     spec:
       serviceAccountName: agentsmith-app
+{{AGENTSMITH_NODE_SUBSTRATE_CA_INIT_CONTAINERS}}
       containers:
         - name: api
           image: "{{API_IMAGE}}"
@@ -185,11 +194,14 @@ spec:
               value: "20000"
             - name: INTERNAL_AGENT_IMAGE
               value: "{{MANAGED_RUNNER_IMAGE}}"
+{{AGENTSMITH_NODE_SUBSTRATE_CA_ENV}}
           envFrom:
             - configMapRef:
                 name: agentsmith-app-config
             - secretRef:
                 name: {{AGENTSMITH_APP_REF}}
+{{AGENTSMITH_NODE_SUBSTRATE_CA_VOLUME_MOUNTS}}
+{{AGENTSMITH_NODE_SUBSTRATE_CA_VOLUMES}}
 ---
 apiVersion: v1
 kind: Service

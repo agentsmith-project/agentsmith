@@ -263,7 +263,17 @@ function checkConfigAddressTruth(config: Record<string, unknown>, failures: Chec
   requireConfigValue(failures, config, 'ASBCP_INTERNAL_BASE_URL', ASBCP_INTERNAL_BASE_URL);
   requireConfigValue(failures, config, 'MBOS_UNIVERSAL_PROXY_BASE_URL', LLMUP_BASE_URL);
   requireConfigValue(failures, config, 'LLMUP_INTERNAL_BASE_URL', LLMUP_BASE_URL);
-  requireConfigValue(failures, config, 'INTERNAL_KEYCLOAK_BASE_URL', substrateKeycloakInternalBaseUrl());
+  const internalKeycloakBase = stringValue(config, 'INTERNAL_KEYCLOAK_BASE_URL');
+  if (
+    internalKeycloakBase !== substrateKeycloakInternalBaseUrl('http')
+    && internalKeycloakBase !== substrateKeycloakInternalBaseUrl('https')
+  ) {
+    addFailure(
+      failures,
+      APP_CONFIG,
+      `INTERNAL_KEYCLOAK_BASE_URL must be ${substrateKeycloakInternalBaseUrl('http')} or ${substrateKeycloakInternalBaseUrl('https')}`,
+    );
+  }
   requireConfigValue(failures, config, 'MINIO_ENDPOINT', substrateServiceName('minio'));
   requireConfigValue(failures, config, 'MINIO_PORT', SUBSTRATE_NATIVE_PORTS.minio);
 

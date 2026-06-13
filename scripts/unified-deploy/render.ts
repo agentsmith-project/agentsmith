@@ -23,10 +23,19 @@ import {
 } from './substrate-truth';
 import {
   SUBSTRATE_NATIVE_PORTS,
-  substrateKeycloakInternalBaseUrl,
   substrateMinioInternalMountEndpoint,
   substrateServiceFqdn,
 } from './substrate-address-roles';
+import {
+  NODE_SUBSTRATE_CA_BUNDLE_DIR,
+  NODE_SUBSTRATE_CA_BUNDLE_PATH,
+  SUBSTRATE_CA_OPTIONAL_ENV_KEYS,
+  SUBSTRATE_CA_PROJECTED_PATH,
+  isSubstrateTlsEnabled,
+  resolveSubstrateCaProjection,
+  substrateTlsModeForService,
+  type ResolvedSubstrateCa,
+} from './substrate-ca';
 import { parseKubernetesDocuments, resourceKind, resourceName } from './kubernetes';
 
 export const DEFAULT_SITE_ENV_PATH = path.join(REPO_ROOT, 'infra', 'deploy', 'unified', 'env', 'site.env.example');
@@ -56,6 +65,16 @@ type RenderedUnifiedDeploy = {
 };
 
 type RenderContext = Record<string, string>;
+export type AfscpVolumeCredentialRevisionInput = {
+  name?: string;
+  metaurl: string;
+  storage: string;
+  bucket: string;
+  accessKey?: string;
+  secretKey?: string;
+  configs?: string;
+  envs?: string;
+};
 export type EndpointSliceAddressType = 'IPv4' | 'IPv6' | 'FQDN';
 type RolloutChecksumKey =
   | 'AGENTSMITH_APP_CONFIG_CHECKSUM'
@@ -100,6 +119,8 @@ const SECRET_REF_REVISION_ENV = [
 ] as const;
 const SECRET_NAME_PATTERN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/u;
 const SECRET_REF_REVISION_PATTERN = /^[A-Za-z0-9._:-]+$/u;
+const SECRET_NAME_MAX_LENGTH = 253;
+const AFSCP_VOLUME_REF_REVISION_SUFFIX_LENGTH = 12;
 const RENDER_SUBSTRATE_REQUIRED_ENV = [
   'SUBSTRATE_POSTGRES_HOST',
   'SUBSTRATE_POSTGRES_PORT',
@@ -330,8 +351,46 @@ function sortJson(value: unknown): unknown {
   return value;
 }
 
+function sha256Hex(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
 function sha256(value: unknown): string {
   return `sha256:${createHash('sha256').update(JSON.stringify(sortJson(value))).digest('hex')}`;
+}
+
+export function afscpVolumeCredentialRevision(credential: AfscpVolumeCredentialRevisionInput): string {
+  return sha256({
+    name: credential.name ?? '',
+    metaurl: credential.metaurl,
+    storage: credential.storage,
+    bucket: credential.bucket,
+    accessKeyDigest: credential.accessKey ? sha256Hex(credential.accessKey) : '',
+    secretKeyDigest: credential.secretKey ? sha256Hex(credential.secretKey) : '',
+    configs: credential.configs ?? '',
+    envs: credential.envs ?? '',
+  });
+}
+
+function revisionSuffix(revision: string): string {
+  const digest = /^sha256:([a-f0-9]{64})$/iu.exec(revision)?.[1]?.toLowerCase()
+    ?? sha256Hex(revision);
+  return digest.slice(0, AFSCP_VOLUME_REF_REVISION_SUFFIX_LENGTH);
+}
+
+export function afscpRevisionedVolumeRef(baseRef: string, revision: string): string {
+  if (revision === 'stable') {
+    return baseRef;
+  }
+
+  const suffix = revisionSuffix(revision);
+  if (baseRef.endsWith(`-${suffix}`)) {
+    return baseRef;
+  }
+
+  const maxBaseLength = SECRET_NAME_MAX_LENGTH - suffix.length - 1;
+  const truncatedBase = baseRef.slice(0, maxBaseLength).replace(/-+$/u, '');
+  return `${truncatedBase}-${suffix}`;
 }
 
 function withRolloutChecksumPlaceholders(context: RenderContext): RenderContext {
@@ -386,15 +445,130 @@ function computeRolloutChecksums(renderedYaml: string, context: RenderContext): 
   };
 }
 
+function indentLines(lines: readonly string[], spaces: number): string {
+  const prefix = ' '.repeat(spaces);
+  return `${lines.map((line) => `${prefix}${line}`).join('\n')}\n`;
+}
+
+function volumeLines(caProjection: readonly ResolvedSubstrateCa[]): string[] {
+  return caProjection.flatMap((ca) => [
+    `- name: ${ca.volumeName}`,
+    '  secret:',
+    `    secretName: ${ca.secretName}`,
+    '    items:',
+    `      - key: ${JSON.stringify(ca.secretKey)}`,
+    `        path: ${SUBSTRATE_CA_PROJECTED_PATH}`,
+  ]);
+}
+
+function volumeMountLines(caProjection: readonly ResolvedSubstrateCa[]): string[] {
+  return caProjection.flatMap((ca) => [
+    `- name: ${ca.volumeName}`,
+    `  mountPath: ${ca.mountDir}`,
+    '  readOnly: true',
+  ]);
+}
+
+function nodeCaBundleScript(caProjection: readonly ResolvedSubstrateCa[]): string[] {
+  return [
+    "const fs = require('fs');",
+    `const files = ${JSON.stringify(caProjection.map((ca) => ca.caFilePath))};`,
+    `fs.mkdirSync(${JSON.stringify(NODE_SUBSTRATE_CA_BUNDLE_DIR)}, { recursive: true });`,
+    "const bundle = files.map((file) => fs.readFileSync(file, 'utf8').trim()).filter(Boolean).join('\\n') + '\\n';",
+    `fs.writeFileSync(${JSON.stringify(NODE_SUBSTRATE_CA_BUNDLE_PATH)}, bundle);`,
+  ];
+}
+
+function nodeSubstrateCaContext(caProjection: readonly ResolvedSubstrateCa[], image: string): RenderContext {
+  if (caProjection.length === 0) {
+    return {
+      AGENTSMITH_NODE_SUBSTRATE_CA_INIT_CONTAINERS: '',
+      AGENTSMITH_NODE_SUBSTRATE_CA_ENV: '',
+      AGENTSMITH_NODE_SUBSTRATE_CA_VOLUME_MOUNTS: '',
+      AGENTSMITH_NODE_SUBSTRATE_CA_VOLUMES: '',
+    };
+  }
+
+  const caVolumeMounts = volumeMountLines(caProjection);
+  return {
+    AGENTSMITH_NODE_SUBSTRATE_CA_INIT_CONTAINERS: indentLines([
+      'initContainers:',
+      '  - name: substrate-ca-bundle',
+      `    image: "${image}"`,
+      '    command:',
+      '      - node',
+      '    args:',
+      '      - -e',
+      '      - |',
+      ...nodeCaBundleScript(caProjection).map((line) => `        ${line}`),
+      '    volumeMounts:',
+      `      - name: substrate-ca-bundle`,
+      `        mountPath: ${NODE_SUBSTRATE_CA_BUNDLE_DIR}`,
+      ...caVolumeMounts.map((line) => `      ${line}`),
+    ], 6),
+    AGENTSMITH_NODE_SUBSTRATE_CA_ENV: indentLines([
+      '- name: NODE_EXTRA_CA_CERTS',
+      `  value: ${NODE_SUBSTRATE_CA_BUNDLE_PATH}`,
+    ], 12),
+    AGENTSMITH_NODE_SUBSTRATE_CA_VOLUME_MOUNTS: indentLines([
+      'volumeMounts:',
+      `  - name: substrate-ca-bundle`,
+      `    mountPath: ${NODE_SUBSTRATE_CA_BUNDLE_DIR}`,
+      '    readOnly: true',
+      ...caVolumeMounts.map((line) => `  ${line}`),
+    ], 10),
+    AGENTSMITH_NODE_SUBSTRATE_CA_VOLUMES: indentLines([
+      'volumes:',
+      `  - name: substrate-ca-bundle`,
+      '    emptyDir: {}',
+      ...volumeLines(caProjection).map((line) => `  ${line}`),
+    ], 6),
+  };
+}
+
+function afscpSubstrateCaContext(caProjection: readonly ResolvedSubstrateCa[]): RenderContext {
+  if (caProjection.length === 0) {
+    return {
+      AFSCP_SUBSTRATE_CA_ENV: '',
+      AFSCP_SUBSTRATE_CA_VOLUME_MOUNTS_BLOCK: '',
+      AFSCP_SUBSTRATE_CA_VOLUME_MOUNTS_ITEMS: '',
+      AFSCP_SUBSTRATE_CA_VOLUMES_BLOCK: '',
+      AFSCP_SUBSTRATE_CA_VOLUMES_ITEMS: '',
+    };
+  }
+
+  return {
+    AFSCP_SUBSTRATE_CA_ENV: indentLines([
+      'env:',
+      '  - name: SSL_CERT_DIR',
+      `    value: ${caProjection.map((ca) => ca.mountDir).join(':')}`,
+    ], 10),
+    AFSCP_SUBSTRATE_CA_VOLUME_MOUNTS_BLOCK: indentLines([
+      'volumeMounts:',
+      ...volumeMountLines(caProjection).map((line) => `  ${line}`),
+    ], 10),
+    AFSCP_SUBSTRATE_CA_VOLUME_MOUNTS_ITEMS: indentLines(volumeMountLines(caProjection), 12),
+    AFSCP_SUBSTRATE_CA_VOLUMES_BLOCK: indentLines([
+      'volumes:',
+      ...volumeLines(caProjection).map((line) => `  ${line}`),
+    ], 6),
+    AFSCP_SUBSTRATE_CA_VOLUMES_ITEMS: indentLines(volumeLines(caProjection), 8),
+  };
+}
+
 function buildContext(profile: UnifiedDeployProfile, env: Record<string, string>): RenderContext {
   const publicKeycloakBaseUrl = deriveKeycloakPublicBaseUrl(
     env.SUBSTRATE_KEYCLOAK_PUBLIC_ISSUER ?? '',
     env.SUBSTRATE_KEYCLOAK_REALM ?? '',
   );
   const namespace = env.NAMESPACE ?? '';
+  const caProjection = resolveSubstrateCaProjection(env, namespace);
+  const objectStorageTlsEnabled = isSubstrateTlsEnabled(substrateTlsModeForService(env, 'object-storage'));
+  const afscpVolumeRef = afscpRevisionedVolumeRef(env.AFSCP_VOLUME_REF, env.AFSCP_VOLUME_REF_REVISION);
 
   return {
     ...env,
+    AFSCP_VOLUME_REF: afscpVolumeRef,
     PROFILE: profile,
     LLMUP_INTERNAL_BASE_URL: 'http://agentsmith-llmup:8080',
     AFSCP_BASE_URL: `http://afscp-api.${namespace}.svc.cluster.local:8080`,
@@ -417,13 +591,19 @@ function buildContext(profile: UnifiedDeployProfile, env: Record<string, string>
     SUBSTRATE_KEYCLOAK_SERVICE_PORT: SUBSTRATE_NATIVE_PORTS.keycloak,
     SUBSTRATE_POSTGRES_SERVICE_FQDN: substrateServiceFqdn('postgresql', namespace),
     SUBSTRATE_MINIO_SERVICE_FQDN: substrateServiceFqdn('minio', namespace),
-    SUBSTRATE_KEYCLOAK_INTERNAL_SERVICE_BASE_URL: substrateKeycloakInternalBaseUrl(),
-    AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT: substrateMinioInternalMountEndpoint(namespace),
+    SUBSTRATE_KEYCLOAK_INTERNAL_SERVICE_BASE_URL: env.SUBSTRATE_KEYCLOAK_INTERNAL_BASE_URL,
+    SUBSTRATE_MINIO_USE_SSL: objectStorageTlsEnabled ? 'true' : 'false',
+    AFSCP_SUBSTRATE_OBJECT_STORAGE_ENDPOINT: substrateMinioInternalMountEndpoint(
+      namespace,
+      objectStorageTlsEnabled ? 'https' : 'http',
+    ),
     SUBSTRATE_POSTGRES_ADDRESS_TYPE: endpointSliceAddressTypeForHost(env.SUBSTRATE_POSTGRES_HOST ?? ''),
     SUBSTRATE_MONGODB_ADDRESS_TYPE: endpointSliceAddressTypeForHost(env.SUBSTRATE_MONGODB_HOST ?? ''),
     SUBSTRATE_REDIS_ADDRESS_TYPE: endpointSliceAddressTypeForHost(env.SUBSTRATE_REDIS_HOST ?? ''),
     SUBSTRATE_MINIO_ADDRESS_TYPE: endpointSliceAddressTypeForHost(env.SUBSTRATE_MINIO_HOST ?? ''),
     SUBSTRATE_KEYCLOAK_ADDRESS_TYPE: endpointSliceAddressTypeForHost(env.SUBSTRATE_KEYCLOAK_HOST ?? ''),
+    ...nodeSubstrateCaContext(caProjection, env.API_IMAGE ?? ''),
+    ...afscpSubstrateCaContext(caProjection),
   };
 }
 
@@ -473,7 +653,7 @@ export async function renderUnifiedDeployToString(options: RenderUnifiedDeployOp
   const substrateTruth = parseSubstrateTruth(substrateTruthSource, {
     sourcePath: substrateTruthPath,
     requiredEnv: RENDER_SUBSTRATE_REQUIRED_ENV,
-    optionalEnv: DOCKER_SUBSTRATE_REQUIRED_ENV,
+    optionalEnv: [...DOCKER_SUBSTRATE_REQUIRED_ENV, ...SUBSTRATE_CA_OPTIONAL_ENV_KEYS],
     includeDefaultRequiredEnv: false,
   });
   const env = {

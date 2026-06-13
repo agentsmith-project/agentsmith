@@ -6,6 +6,11 @@ import { fileURLToPath } from 'node:url';
 
 import type { CheckFailure, CheckResult } from './manifest';
 import { substrateKeycloakInternalBaseUrl } from './substrate-address-roles';
+import {
+  SUBSTRATE_CA_OPTIONAL_ENV_KEYS,
+  isSubstrateTlsEnabled,
+  substrateTlsModeForService,
+} from './substrate-ca';
 
 export const SUBSTRATE_TRUTH_SCHEMA_VERSION = 'agentsmith.docker-substrate.truth/v1';
 export const SUBSTRATE_TRUTH_SCHEMA_ENV_KEY = 'SUBSTRATE_TRUTH_SCHEMA_VERSION';
@@ -160,7 +165,12 @@ function requiredSubstrateEnv(options: SubstrateTruthOptions): readonly string[]
 }
 
 function allowedSubstrateTruthKeys(options: SubstrateTruthOptions): ReadonlySet<string> {
-  return new Set([SUBSTRATE_TRUTH_SCHEMA_ENV_KEY, ...requiredSubstrateEnv(options), ...(options.optionalEnv ?? [])]);
+  return new Set([
+    SUBSTRATE_TRUTH_SCHEMA_ENV_KEY,
+    ...requiredSubstrateEnv(options),
+    ...SUBSTRATE_CA_OPTIONAL_ENV_KEYS,
+    ...(options.optionalEnv ?? []),
+  ]);
 }
 
 function isForbiddenKey(key: string, allowedKeys: ReadonlySet<string>): boolean {
@@ -225,7 +235,8 @@ function validateKeycloakInternalBase(values: Record<string, string>, failures: 
     return;
   }
 
-  const expected = substrateKeycloakInternalBaseUrl();
+  const oidcTlsEnabled = isSubstrateTlsEnabled(substrateTlsModeForService(values, 'oidc'));
+  const expected = substrateKeycloakInternalBaseUrl(oidcTlsEnabled ? 'https' : 'http');
   if (internalBase !== expected) {
     addFailure(
       failures,

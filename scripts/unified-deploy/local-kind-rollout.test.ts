@@ -17,7 +17,11 @@ import {
   updateRunReadinessStateField,
 } from '../governance/run-readiness-state';
 import { asRecord } from './manifest';
-import { DEFAULT_SITE_ENV_PATH } from './render';
+import {
+  DEFAULT_SITE_ENV_PATH,
+  afscpRevisionedVolumeRef,
+  afscpVolumeCredentialRevision,
+} from './render';
 import { parseKubernetesDocuments, type KubernetesDocument } from './kubernetes';
 import {
   LEGACY_ASBCP_CHECKSUM_FRAGMENT,
@@ -57,6 +61,17 @@ const INGRESS_CERTGEN_DIGEST = 'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 const MANAGED_RUNNER_DIGEST = 'sha256:9999999999999999999999999999999999999999999999999999999999999999';
 const AFSCP_DIGEST = 'sha256:abababababababababababababababababababababababababababababababab';
 const JUICEFS_MOUNT_PRIORITY_CLASS = 'juicefs-mount-priority-nonpreempting';
+const SENTINEL_AFSCP_VOLUME_REF = afscpRevisionedVolumeRef(
+  'afscp-default-volume-juicefs',
+  afscpVolumeCredentialRevision({
+    name: 'agentsmith-afscp-default',
+    metaurl: 'postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql.agentsmith.svc.cluster.local:5432/sentinel_pg_db?sslmode=disable',
+    storage: 'minio',
+    bucket: 'http://substrate-minio.agentsmith.svc.cluster.local:9000/sentinel-files',
+    accessKey: 'sentinel_minio_access',
+    secretKey: 'sentinel_minio_secret',
+  }),
+);
 
 function readAsbcpLockDigest(): string {
   const match = /^asbcp_source_image=.*@(sha256:[a-f0-9]{64})$/mu.exec(readFileSync(asbcpImageLockPath, 'utf8'));
@@ -179,6 +194,27 @@ function writeActualSubstrateTruth(root: string, host = '172.19.0.1'): string {
     .replace(/^SUBSTRATE_KEYCLOAK_PORT=.*$/mu, 'SUBSTRATE_KEYCLOAK_PORT=18080')
     .replace(/^SUBSTRATE_KEYCLOAK_PUBLIC_ISSUER=.*$/mu, 'SUBSTRATE_KEYCLOAK_PUBLIC_ISSUER=http://localhost:18080/realms/agentsmith')
     .replace(/^SUBSTRATE_KEYCLOAK_INTERNAL_BASE_URL=.*$/mu, 'SUBSTRATE_KEYCLOAK_INTERNAL_BASE_URL=http://substrate-keycloak:8080');
+  writeFileSync(truthPath, source, 'utf8');
+  return truthPath;
+}
+
+function writeStrictTlsSubstrateTruth(root: string, mutate: (source: string) => string = (source) => source): string {
+  const truthPath = join(root, 'strict-tls-connection.env');
+  const source = mutate(`${readFileSync(join(fixturesDir, 'substrate-truth.sentinel.env'), 'utf8')}
+SUBSTRATE_POSTGRES_TLS_MODE=verify-full
+SUBSTRATE_POSTGRES_CA_SECRET_REF=secretRef:agentsmith/postgresql-ca
+SUBSTRATE_MONGODB_TLS_MODE=verify-full
+SUBSTRATE_MONGODB_CA_SECRET_REF=secretRef:agentsmith/mongodb-ca
+SUBSTRATE_REDIS_TLS_MODE=verify-full
+SUBSTRATE_REDIS_CA_SECRET_REF=secretRef:agentsmith/redis-ca
+SUBSTRATE_OBJECT_STORAGE_TLS_MODE=https
+SUBSTRATE_OBJECT_STORAGE_CA_SECRET_REF=secretRef:agentsmith/object-storage-ca
+SUBSTRATE_OIDC_TLS_MODE=https
+SUBSTRATE_OIDC_CA_SECRET_REF=secretRef:agentsmith/oidc-ca
+`.replace(
+    /^SUBSTRATE_KEYCLOAK_INTERNAL_BASE_URL=.*$/mu,
+    'SUBSTRATE_KEYCLOAK_INTERNAL_BASE_URL=https://substrate-keycloak:8080',
+  ));
   writeFileSync(truthPath, source, 'utf8');
   return truthPath;
 }
@@ -351,7 +387,17 @@ function failedJob(name: string, reason: string, message: string): Record<string
   };
 }
 
-function createPassingRunner(calls: CommandCall[], context = 'kind-agentsmith'): LocalKindCommandRunner {
+function createPassingRunner(
+  calls: CommandCall[],
+  context = 'kind-agentsmith',
+  caSecretData: Record<string, string> = {},
+): LocalKindCommandRunner {
+  const caSecrets = {
+    'postgresql-ca': 'c2VudGluZWwtcG9zdGdyZXMtY2E=',
+    'object-storage-ca': 'c2VudGluZWwtb2JqZWN0LXN0b3JhZ2UtY2E=',
+    ...caSecretData,
+  };
+
   return async (command, args, options = {}) => {
     calls.push({ command, args, input: options.input ?? '', timeoutMs: options.timeoutMs });
     const joined = args.join(' ');
@@ -404,6 +450,24 @@ function createPassingRunner(calls: CommandCall[], context = 'kind-agentsmith'):
     if (joined.includes('get namespace kube-system') && joined.includes('jsonpath')) {
       return { exitCode: 0, stdout: 'cluster-uid-local-kind\n', stderr: '' };
     }
+    const secretArgIndex = args.findIndex((arg, index) => arg === 'secret' && args[index - 1] === 'get');
+    const caSecretName = secretArgIndex >= 0 ? args[secretArgIndex + 1] : undefined;
+    const caData = caSecretName ? caSecrets[caSecretName] : undefined;
+    if (caSecretName && caData && args.includes('-o') && args.includes('json')) {
+      const namespaceArgIndex = args.findIndex((arg) => arg === '-n');
+      const namespace = namespaceArgIndex >= 0 ? args[namespaceArgIndex + 1] ?? 'agentsmith' : 'agentsmith';
+      return jsonResult({
+        kind: 'Secret',
+        metadata: {
+          name: caSecretName,
+          namespace,
+        },
+        type: 'Opaque',
+        data: {
+          'ca.crt': caData,
+        },
+      });
+    }
     if (joined.includes('rollout status')) {
       return { exitCode: 0, stdout: 'deployment successfully rolled out', stderr: '' };
     }
@@ -439,6 +503,12 @@ function createPassingRunner(calls: CommandCall[], context = 'kind-agentsmith'):
     }
     if (joined.includes('get job/afscp-volume-bootstrap -o json')) {
       return jsonResult(completedJob('afscp-volume-bootstrap'));
+    }
+    if (
+      joined.includes('get pods -l app.kubernetes.io/name=juicefs-mount,volume-id=agentsmith-afscp-default-volume')
+      || joined.includes('get secrets -l juicefs/secret')
+    ) {
+      return { exitCode: 0, stdout: '', stderr: '' };
     }
     if (joined.includes('wait --for=condition=complete job/ingress-nginx-admission-create') || joined.includes('wait --for=condition=complete job/ingress-nginx-admission-patch')) {
       return { exitCode: 0, stdout: 'job completed', stderr: '' };
@@ -597,7 +667,10 @@ function ownedAfscpPersistentVolumeClaim(storage = '10Pi'): Record<string, unkno
   };
 }
 
-function ownedAfscpPersistentVolume(storage = '10Pi'): Record<string, unknown> {
+function ownedAfscpPersistentVolume(
+  storage = '10Pi',
+  volumeSecretName = SENTINEL_AFSCP_VOLUME_REF,
+): Record<string, unknown> {
   return {
     apiVersion: 'v1',
     kind: 'PersistentVolume',
@@ -626,7 +699,7 @@ function ownedAfscpPersistentVolume(storage = '10Pi'): Record<string, unknown> {
         volumeHandle: 'agentsmith-afscp-default-volume',
         fsType: 'juicefs',
         nodePublishSecretRef: {
-          name: 'afscp-default-volume-juicefs',
+          name: volumeSecretName,
           namespace: 'agentsmith',
         },
       },
@@ -734,6 +807,32 @@ describe('local-kind JuiceFS CSI manifest contract', () => {
       cpu: '100m',
       memory: '128Mi',
     }));
+  });
+
+  it('projects the local-kind Postgres CA into the JuiceFS node plugin for strict TLS metadata checks', () => {
+    const parsed = parseKubernetesDocuments(readFileSync(localKindJuicefsCsiManifestPath, 'utf8'));
+    const node = requireManifestResource(parsed.documents, 'DaemonSet', 'juicefs-csi-node');
+    const plugin = requirePodTemplateContainer(node, 'juicefs-plugin');
+    const podSpec = asRecord(asRecord(asRecord(node.spec).template).spec);
+    const volumeMounts = Array.isArray(plugin.volumeMounts) ? plugin.volumeMounts.map(asRecord) : [];
+    const volumes = Array.isArray(podSpec.volumes) ? podSpec.volumes.map(asRecord) : [];
+    const caMount = volumeMounts.find((mount) => mount.name === 'agentsmith-substrate-postgresql-ca');
+    const caVolume = volumes.find((volume) => volume.name === 'agentsmith-substrate-postgresql-ca');
+    const caSecret = asRecord(caVolume?.secret);
+
+    expect(parsed.failures).toEqual([]);
+    expect(caMount).toEqual(expect.objectContaining({
+      mountPath: '/etc/agentsmith/substrate-ca/postgresql',
+      readOnly: true,
+    }));
+    expect(caSecret.secretName).toBe('postgresql-ca');
+    expect(caSecret.optional).toBe(true);
+    expect(caSecret.items).toEqual([
+      {
+        key: 'ca.crt',
+        path: 'ca.crt',
+      },
+    ]);
   });
 });
 
@@ -1425,7 +1524,8 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(applyCalls[5]?.input).toContain('kind: Secret');
     expect(applyCalls[5]?.input).toContain('name: agentsmith-app-secrets');
     expect(applyCalls[5]?.input).toContain('name: afscp-runtime-secrets');
-    expect(applyCalls[5]?.input).toContain('name: afscp-default-volume-juicefs');
+    expect(applyCalls[5]?.input).toContain(`name: ${SENTINEL_AFSCP_VOLUME_REF}`);
+    expect(SENTINEL_AFSCP_VOLUME_REF).toMatch(/^afscp-default-volume-juicefs-[a-f0-9]{12}$/u);
     expect(applyCalls[5]?.input).toContain('DATABASE_URL: "postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db"');
     expect(applyCalls[5]?.input).toContain('AFSCP_API_SERVICE_TOKENS: "agentsmith-api=agentsmith-dev-afscp-product-token,agentsmith-bootstrap=agentsmith-dev-afscp-bootstrap-token,agentsmith-sandbox-control-plane=agentsmith-dev-afscp-orchestrator-token"');
     expect(applyCalls[5]?.input).toContain('metaurl: "postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql.agentsmith.svc.cluster.local:5432/sentinel_pg_db?sslmode=disable"');
@@ -1480,7 +1580,7 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(applyCalls[9]?.input).toContain('name: afscp-runtime');
     expect(applyCalls[9]?.input).toContain('name: afscp-runtime-config');
     expect(applyCalls[9]?.input).toContain('name: afscp-runtime-secrets');
-    expect(applyCalls[9]?.input).toContain('name: afscp-default-volume-juicefs');
+    expect(applyCalls[9]?.input).toContain(`name: ${SENTINEL_AFSCP_VOLUME_REF}`);
     expect(applyCalls[9]?.input).toContain('kind: Job');
     expect(applyCalls[9]?.input).toContain('name: afscp-schema-bootstrap');
     expect(applyCalls[9]?.input).toContain('/usr/local/bin/afscp-migrate');
@@ -1495,7 +1595,7 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(applyCalls[9]?.input).toContain('AFSCP_DEFAULT_VOLUME_STATUS: active');
     expect(applyCalls[9]?.input).toContain('AFSCP_DEFAULT_VOLUME_CAPABILITIES_JSON:');
     expect(applyCalls[9]?.input).toContain('"jvs_external_control_root":true');
-    expect(applyCalls[9]?.input).toContain('AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS: vol_agentsmith_default=agentsmith/afscp-default-volume-juicefs');
+    expect(applyCalls[9]?.input).toContain(`AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS: vol_agentsmith_default=agentsmith/${SENTINEL_AFSCP_VOLUME_REF}`);
     expect(applyCalls[9]?.input).toContain('nodePublishSecretRef:');
     expect(applyCalls[9]?.input).not.toContain('metaurl: postgres://sentinel_pg_user:sentinel_pg_secret');
     expect(applyCalls[9]?.input).not.toContain('bucket: http://substrate-minio.agentsmith.svc.cluster.local:9000/sentinel-files');
@@ -1677,6 +1777,235 @@ describe('unified deploy local-kind live rollout producer', () => {
     });
     expect(result.evidence.live_api_replica_check.ready_replicas).toBe(1);
     expect(result.evidence.route_probes.map((probe) => probe.status)).toEqual(['passed', 'passed', 'passed', 'passed']);
+  });
+
+  it('materializes CA-aware runtime Secrets when local-kind substrate truth declares strict TLS', async () => {
+    const root = tempDir('local-kind-strict-tls-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const substrateTruthPath = writeStrictTlsSubstrateTruth(root);
+    const calls: CommandCall[] = [];
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: {
+        KUBECONFIG: kubeconfigPath,
+        ...createReadyLocalKindImageImportEnv({ root, siteEnvPath }),
+      },
+      homeDir: root,
+      siteEnvPath,
+      substrateTruthPath,
+      runner: createPassingRunner(calls),
+      probeRunner: passingProbeRunner,
+    });
+    const secretMaterializeDryRun = calls
+      .filter((call) => call.args.includes('apply'))
+      .find((call) =>
+        call.args.includes('--dry-run=server')
+        && call.input.includes('name: agentsmith-app-secrets')
+        && call.input.includes('name: afscp-runtime-secrets'),
+      );
+    const productBootstrapDryRun = calls
+      .filter((call) => call.args.includes('apply'))
+      .find((call) =>
+        call.args.includes('--dry-run=server')
+        && call.input.includes('name: agentsmith-product-schema-bootstrap')
+        && call.input.includes('MINIO_USE_SSL: "true"'),
+      );
+    const appDryRun = calls
+      .filter((call) => call.args.includes('apply'))
+      .find((call) =>
+        call.args.includes('--dry-run=server')
+        && call.input.includes('name: agentsmith-api')
+        && call.input.includes('name: NODE_EXTRA_CA_CERTS'),
+      );
+    const postgresCaMirrorApply = calls
+      .filter((call) => call.args.includes('apply'))
+      .find((call) =>
+        !call.args.includes('--dry-run=server')
+        && call.input.includes('agentsmith.mbos.dev/secret-role: juicefs-csi-postgresql-ca-mirror')
+        && call.input.includes('namespace: kube-system'),
+      );
+    const objectStorageCaMirrorApply = calls
+      .filter((call) => call.args.includes('apply'))
+      .find((call) =>
+        !call.args.includes('--dry-run=server')
+        && call.input.includes('agentsmith.mbos.dev/secret-role: juicefs-csi-object-storage-ca-mirror')
+        && call.input.includes('namespace: kube-system'),
+      );
+    const csiNodeRolloutIndex = calls.findIndex((call) =>
+      call.args.join(' ').includes('rollout status daemonset/juicefs-csi-node'),
+    );
+    const postgresCaMirrorApplyIndex = calls.indexOf(postgresCaMirrorApply as CommandCall);
+    const objectStorageCaMirrorApplyIndex = calls.indexOf(objectStorageCaMirrorApply as CommandCall);
+    const secretDocuments = parseKubernetesDocuments(secretMaterializeDryRun?.input ?? '').documents;
+    const volumeSecret = secretDocuments.find((document) =>
+      document.kind === 'Secret'
+      && String(asRecord(document.metadata).name).startsWith('afscp-default-volume-juicefs-'),
+    );
+    if (!volumeSecret) {
+      throw new Error('expected revisioned AFSCP volume Secret in local-kind existing secrets');
+    }
+    const volumeSecretData = asRecord(volumeSecret.stringData);
+
+    expect(result.status, JSON.stringify(result.failures, null, 2)).toBe('passed');
+    expect(secretMaterializeDryRun?.input).toContain('DATABASE_URL: "postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db?sslmode=verify-full&sslrootcert=/etc/agentsmith/substrate-ca/postgresql/ca.crt"');
+    expect(secretMaterializeDryRun?.input).toContain('MONGO_URL: "mongodb://sentinel_mongo_user:sentinel_mongo_secret@substrate-mongodb:27017/admin?tls=true&tlsCAFile=/etc/agentsmith/substrate-ca/mongodb/ca.crt"');
+    expect(secretMaterializeDryRun?.input).toContain('REDIS_URL: "rediss://:sentinel_redis_secret@substrate-redis:6379/0"');
+    expect(secretMaterializeDryRun?.input).toContain('AFSCP_POSTGRES_DSN: "postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db?sslmode=verify-full&sslrootcert=/etc/agentsmith/substrate-ca/postgresql/ca.crt"');
+    expect(secretMaterializeDryRun?.input).toContain('metaurl: "postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql.agentsmith.svc.cluster.local:5432/sentinel_pg_db?sslmode=verify-full&sslrootcert=/etc/agentsmith/substrate-ca/postgresql/ca.crt"');
+    expect(volumeSecretData.configs).toBe('{"postgresql-ca":"/etc/agentsmith/substrate-ca/postgresql","object-storage-ca":"/etc/agentsmith/substrate-ca/object-storage"}');
+    expect(volumeSecretData.envs).toBe('{"SSL_CERT_DIR":"/etc/agentsmith/substrate-ca/object-storage"}');
+    expect(postgresCaMirrorApply?.input).toContain('name: postgresql-ca');
+    expect(postgresCaMirrorApply?.input).toContain('namespace: kube-system');
+    expect(postgresCaMirrorApply?.input).toContain('agentsmith.mbos.dev/mirrored-from: agentsmith/postgresql-ca');
+    expect(postgresCaMirrorApply?.input).toContain('ca.crt: ');
+    expect(objectStorageCaMirrorApply?.input).toContain('name: object-storage-ca');
+    expect(objectStorageCaMirrorApply?.input).toContain('namespace: kube-system');
+    expect(objectStorageCaMirrorApply?.input).toContain('agentsmith.mbos.dev/mirrored-from: agentsmith/object-storage-ca');
+    expect(objectStorageCaMirrorApply?.input).toContain('ca.crt: ');
+    expect(postgresCaMirrorApplyIndex).toBeGreaterThanOrEqual(0);
+    expect(objectStorageCaMirrorApplyIndex).toBeGreaterThanOrEqual(0);
+    expect(csiNodeRolloutIndex).toBeGreaterThan(postgresCaMirrorApplyIndex);
+    expect(csiNodeRolloutIndex).toBeGreaterThan(objectStorageCaMirrorApplyIndex);
+    expect(secretMaterializeDryRun?.input).toContain('bucket: "https://substrate-minio.agentsmith.svc.cluster.local:9000/sentinel-files"');
+    expect(productBootstrapDryRun?.input).toContain('MINIO_USE_SSL: "true"');
+    expect(productBootstrapDryRun?.input).toContain('INTERNAL_KEYCLOAK_BASE_URL: https://substrate-keycloak:8080');
+    expect(appDryRun?.input).toContain('name: substrate-postgresql-ca');
+    expect(appDryRun?.input).toContain('secretName: postgresql-ca');
+    expect(appDryRun?.input).toContain('name: substrate-object-storage-ca');
+    expect(appDryRun?.input).toContain('secretName: object-storage-ca');
+    expect(appDryRun?.input).toContain('name: NODE_EXTRA_CA_CERTS');
+    expect(appDryRun?.input).toContain('value: /etc/agentsmith/substrate-ca-bundle/ca-bundle.crt');
+    expect(appDryRun?.input).toContain('name: SSL_CERT_DIR');
+  });
+
+  it('mirrors a custom Postgres CA source Secret into the stable JuiceFS CSI alias', async () => {
+    const root = tempDir('local-kind-custom-postgres-ca-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const substrateTruthPath = writeStrictTlsSubstrateTruth(root, (source) => source.replace(
+      /^SUBSTRATE_POSTGRES_CA_SECRET_REF=.*$/mu,
+      'SUBSTRATE_POSTGRES_CA_SECRET_REF=secretRef:agentsmith/custom-postgres-ca',
+    ));
+    const calls: CommandCall[] = [];
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: {
+        KUBECONFIG: kubeconfigPath,
+        ...createReadyLocalKindImageImportEnv({ root, siteEnvPath }),
+      },
+      homeDir: root,
+      siteEnvPath,
+      substrateTruthPath,
+      runner: createPassingRunner(calls, 'kind-agentsmith', {
+        'custom-postgres-ca': 'Y3VzdG9tLXBvc3RncmVzLWNh',
+      }),
+      probeRunner: passingProbeRunner,
+    });
+    const secretMaterializeDryRun = calls
+      .filter((call) => call.args.includes('apply'))
+      .find((call) =>
+        call.args.includes('--dry-run=server')
+        && call.input.includes('name: agentsmith-app-secrets')
+        && call.input.includes('name: afscp-runtime-secrets'),
+      );
+    const secretDocuments = parseKubernetesDocuments(secretMaterializeDryRun?.input ?? '').documents;
+    const volumeSecret = secretDocuments.find((document) =>
+      document.kind === 'Secret'
+      && String(asRecord(document.metadata).name).startsWith('afscp-default-volume-juicefs-'),
+    );
+    if (!volumeSecret) {
+      throw new Error('expected revisioned AFSCP volume Secret in local-kind existing secrets');
+    }
+    const volumeSecretData = asRecord(volumeSecret.stringData);
+    const postgresCaMirrorApply = calls
+      .filter((call) => call.args.includes('apply'))
+      .find((call) =>
+        !call.args.includes('--dry-run=server')
+        && call.input.includes('agentsmith.mbos.dev/secret-role: juicefs-csi-postgresql-ca-mirror')
+        && call.input.includes('namespace: kube-system'),
+      );
+
+    expect(result.status, JSON.stringify(result.failures, null, 2)).toBe('passed');
+    expect(calls.some((call) => call.args.join(' ').includes('get secret custom-postgres-ca -o json'))).toBe(true);
+    expect(volumeSecretData.configs).toBe('{"postgresql-ca":"/etc/agentsmith/substrate-ca/postgresql","object-storage-ca":"/etc/agentsmith/substrate-ca/object-storage"}');
+    expect(postgresCaMirrorApply?.input).toContain('name: postgresql-ca');
+    expect(postgresCaMirrorApply?.input).toContain('agentsmith.mbos.dev/mirrored-from: agentsmith/custom-postgres-ca');
+  });
+
+  it('keeps distinct JuiceFS CA configs when Postgres and object storage share a source Secret name', async () => {
+    const root = tempDir('local-kind-shared-ca-source-');
+    const evidenceDir = tempDir('local-kind-evidence-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeLocalKindImageSiteEnv(root);
+    const substrateTruthPath = writeStrictTlsSubstrateTruth(root, (source) => source
+      .replace(
+        /^SUBSTRATE_POSTGRES_CA_SECRET_REF=.*$/mu,
+        'SUBSTRATE_POSTGRES_CA_SECRET_REF=secretRef:agentsmith/shared-substrate-ca',
+      )
+      .replace(
+        /^SUBSTRATE_OBJECT_STORAGE_CA_SECRET_REF=.*$/mu,
+        'SUBSTRATE_OBJECT_STORAGE_CA_SECRET_REF=secretRef:agentsmith/shared-substrate-ca',
+      ));
+    const calls: CommandCall[] = [];
+
+    const result = await runLocalKindRolloutProducer({
+      evidenceDir,
+      env: {
+        KUBECONFIG: kubeconfigPath,
+        ...createReadyLocalKindImageImportEnv({ root, siteEnvPath }),
+      },
+      homeDir: root,
+      siteEnvPath,
+      substrateTruthPath,
+      runner: createPassingRunner(calls, 'kind-agentsmith', {
+        'shared-substrate-ca': 'c2hhcmVkLXN1YnN0cmF0ZS1jYQ==',
+      }),
+      probeRunner: passingProbeRunner,
+    });
+    const secretMaterializeDryRun = calls
+      .filter((call) => call.args.includes('apply'))
+      .find((call) =>
+        call.args.includes('--dry-run=server')
+        && call.input.includes('name: agentsmith-app-secrets')
+        && call.input.includes('name: afscp-runtime-secrets'),
+      );
+    const secretDocuments = parseKubernetesDocuments(secretMaterializeDryRun?.input ?? '').documents;
+    const volumeSecret = secretDocuments.find((document) =>
+      document.kind === 'Secret'
+      && String(asRecord(document.metadata).name).startsWith('afscp-default-volume-juicefs-'),
+    );
+    if (!volumeSecret) {
+      throw new Error('expected revisioned AFSCP volume Secret in local-kind existing secrets');
+    }
+    const volumeSecretData = asRecord(volumeSecret.stringData);
+    const postgresCaMirrorApply = calls
+      .filter((call) => call.args.includes('apply'))
+      .find((call) =>
+        !call.args.includes('--dry-run=server')
+        && call.input.includes('agentsmith.mbos.dev/secret-role: juicefs-csi-postgresql-ca-mirror')
+        && call.input.includes('namespace: kube-system'),
+      );
+    const objectStorageCaMirrorApply = calls
+      .filter((call) => call.args.includes('apply'))
+      .find((call) =>
+        !call.args.includes('--dry-run=server')
+        && call.input.includes('agentsmith.mbos.dev/secret-role: juicefs-csi-object-storage-ca-mirror')
+        && call.input.includes('namespace: kube-system'),
+      );
+
+    expect(result.status, JSON.stringify(result.failures, null, 2)).toBe('passed');
+    expect(calls.filter((call) => call.args.join(' ').includes('get secret shared-substrate-ca -o json'))).toHaveLength(2);
+    expect(volumeSecretData.configs).toBe('{"postgresql-ca":"/etc/agentsmith/substrate-ca/postgresql","object-storage-ca":"/etc/agentsmith/substrate-ca/object-storage"}');
+    expect(volumeSecretData.envs).toBe('{"SSL_CERT_DIR":"/etc/agentsmith/substrate-ca/object-storage"}');
+    expect(postgresCaMirrorApply?.input).toContain('name: postgresql-ca');
+    expect(postgresCaMirrorApply?.input).toContain('agentsmith.mbos.dev/mirrored-from: agentsmith/shared-substrate-ca');
+    expect(objectStorageCaMirrorApply?.input).toContain('name: object-storage-ca');
+    expect(objectStorageCaMirrorApply?.input).toContain('agentsmith.mbos.dev/mirrored-from: agentsmith/shared-substrate-ca');
   });
 
   it('fails ASBCP image adoption when running Pods are mixed old and target digests', async () => {
@@ -2386,6 +2715,24 @@ describe('unified deploy local-kind live rollout producer', () => {
         secretRef.namespace = 'stale-namespace';
         return jsonResult(resource);
       }
+      if (command === 'kubectl' && joined.includes('get pods -l app.kubernetes.io/name=juicefs-mount,volume-id=agentsmith-afscp-default-volume')) {
+        return {
+          exitCode: 0,
+          stdout: 'juicefs-agentsmith-afscp-default-volume-abcd\tmount-pod-uid\tjuicefs-mount\tagentsmith-afscp-default-volume\tagentsmith-afscp-default-volume\t\t\n',
+          stderr: '',
+        };
+      }
+      if (command === 'kubectl' && joined.includes('get secrets -l juicefs/secret')) {
+        return {
+          exitCode: 0,
+          stdout: [
+            'juicefs-generated-afscp-secret\tgenerated-secret-uid\t\tagentsmith-afscp-default-volume\tagentsmith-afscp-default-volume\ttrue\tPod/juicefs-agentsmith-afscp-default-volume-abcd/mount-pod-uid;',
+            'juicefs-generated-other-secret\tother-secret-uid\t\tother-volume\tother-volume\ttrue\tPod/juicefs-other-volume-abcd/other-pod-uid;',
+            '',
+          ].join('\n'),
+          stderr: '',
+        };
+      }
 
       return createPassingRunner([])(command, args, options);
     };
@@ -2405,6 +2752,15 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(commandText.some((commandLine) =>
       commandLine.includes('delete deployment afscp-api afscp-worker afscp-export-gateway'),
     )).toBe(true);
+    expect(commandText.some((commandLine) =>
+      commandLine.includes('delete pod juicefs-agentsmith-afscp-default-volume-abcd'),
+    )).toBe(true);
+    expect(commandText.some((commandLine) =>
+      commandLine.includes('delete secret juicefs-generated-afscp-secret'),
+    )).toBe(true);
+    expect(commandText.some((commandLine) =>
+      commandLine.includes('delete secret juicefs-generated-other-secret'),
+    )).toBe(false);
     expect(commandText.some((commandLine) => commandLine.includes('delete pvc afscp-default-volume'))).toBe(true);
     expect(commandText.some((commandLine) => commandLine.includes('delete pv agentsmith-afscp-default-volume'))).toBe(true);
   });

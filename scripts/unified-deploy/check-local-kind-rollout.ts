@@ -40,9 +40,11 @@ import {
 } from './kubernetes';
 import {
   DEFAULT_TEMPLATES_ROOT,
+  afscpRevisionedVolumeRef,
+  afscpVolumeCredentialRevision,
+  type AfscpVolumeCredentialRevisionInput,
   parseSiteEnv,
-  renderUnifiedDeployFromFiles,
-  renderUnifiedDeployPreflightFromFiles,
+  renderUnifiedDeployToString,
 } from './render';
 import {
   DEFAULT_LIVE_SUBSTRATE_TRUTH_PATH,
@@ -60,6 +62,13 @@ import {
   substrateMinioInternalMountEndpoint,
   substrateServiceFqdn,
 } from './substrate-address-roles';
+import {
+  type ResolvedSubstrateCa,
+  isSubstrateTlsEnabled,
+  resolveSubstrateCaProjection,
+  substrateCaForService,
+  substrateTlsModeForService,
+} from './substrate-ca';
 import {
   LEGACY_ASBCP_LOCAL_KIND_CLUSTER_RESOURCE_IDS,
   LEGACY_ASBCP_NAMESPACED_RESOURCE_IDS,
@@ -133,12 +142,20 @@ type OperationEvidence = {
     | 'afscp-storage-csi-controller-scale'
     | 'afscp-storage-csi-controller-rollout'
     | 'afscp-storage-csi-node-rollout'
+    | 'afscp-storage-csi-postgres-ca-mirror-dry-run'
+    | 'afscp-storage-csi-postgres-ca-mirror-apply'
+    | 'afscp-storage-csi-object-storage-ca-mirror-dry-run'
+    | 'afscp-storage-csi-object-storage-ca-mirror-apply'
     | 'substrate-endpointslice-reconcile-check'
     | 'substrate-endpointslice-reconcile-delete'
     | 'afscp-static-volume-reset-check-pvc'
     | 'afscp-static-volume-reset-check-pv'
     | 'afscp-static-volume-reset-diff'
     | 'afscp-static-volume-reset-delete-workloads'
+    | 'afscp-static-volume-reset-check-juicefs-cache'
+    | 'afscp-static-volume-reset-check-juicefs-generated-secrets'
+    | 'afscp-static-volume-reset-delete-juicefs-mount-pods'
+    | 'afscp-static-volume-reset-delete-juicefs-generated-secrets'
     | 'afscp-static-volume-reset-delete-pvc'
     | 'afscp-static-volume-reset-delete-pv'
     | 'local-kind-existing-secrets-dry-run'
@@ -313,9 +330,28 @@ type RenderedInputs = {
   preflightYaml: string;
   appYaml: string;
   localKindExistingSecretsYaml: string;
+  localKindJuicefsCaMirrors: LocalKindJuicefsCaMirror[];
   secretValues: string[];
   publicBaseUrl: string;
   siteEnvValues: Record<string, string>;
+};
+
+type LocalKindJuicefsCaMirrorService = 'postgresql' | 'object-storage';
+
+const LOCAL_KIND_JUICEFS_CA_TARGET_SECRET_NAMES = {
+  postgresql: 'postgresql-ca',
+  'object-storage': 'object-storage-ca',
+} as const satisfies Record<LocalKindJuicefsCaMirrorService, string>;
+
+type LocalKindJuicefsCaMirror = {
+  service: LocalKindJuicefsCaMirrorService;
+  sourceNamespace: string;
+  targetNamespace: string;
+  sourceSecretName: string;
+  targetSecretName: string;
+  sourceKey: string;
+  targetKey: 'ca.crt';
+  mountDir: string;
 };
 
 type SiteEnvResolution = {
@@ -550,6 +586,105 @@ function yamlString(value: string): string {
   return JSON.stringify(value);
 }
 
+function queryString(params: Record<string, string>): string {
+  return Object.entries(params)
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&');
+}
+
+function normalizedPostgresSslMode(values: Record<string, string>): string {
+  const tlsMode = substrateTlsModeForService(values, 'postgresql');
+  if (!isSubstrateTlsEnabled(tlsMode)) {
+    return 'disable';
+  }
+
+  const normalized = tlsMode.toLowerCase();
+  if (['strict', 'tls', 'true', 'enabled', 'https'].includes(normalized)) {
+    return 'verify-full';
+  }
+
+  return tlsMode;
+}
+
+function localKindJuicefsCaMirrors(options: {
+  namespace: string;
+  postgresCa?: ResolvedSubstrateCa;
+  objectStorageCa?: ResolvedSubstrateCa;
+  objectStorageTlsEnabled: boolean;
+  volumeMetaUrl: string;
+}): LocalKindJuicefsCaMirror[] {
+  const mirrors: LocalKindJuicefsCaMirror[] = [];
+
+  if (options.postgresCa && options.volumeMetaUrl.includes('sslrootcert=')) {
+    mirrors.push({
+      service: 'postgresql',
+      sourceNamespace: options.namespace,
+      targetNamespace: AFSCP_STORAGE_CSI_NAMESPACE,
+      sourceSecretName: options.postgresCa.secretName,
+      targetSecretName: LOCAL_KIND_JUICEFS_CA_TARGET_SECRET_NAMES.postgresql,
+      sourceKey: options.postgresCa.secretKey,
+      targetKey: 'ca.crt',
+      mountDir: options.postgresCa.mountDir,
+    });
+  }
+
+  if (options.objectStorageTlsEnabled && options.objectStorageCa) {
+    mirrors.push({
+      service: 'object-storage',
+      sourceNamespace: options.namespace,
+      targetNamespace: AFSCP_STORAGE_CSI_NAMESPACE,
+      sourceSecretName: options.objectStorageCa.secretName,
+      targetSecretName: LOCAL_KIND_JUICEFS_CA_TARGET_SECRET_NAMES['object-storage'],
+      sourceKey: options.objectStorageCa.secretKey,
+      targetKey: 'ca.crt',
+      mountDir: options.objectStorageCa.mountDir,
+    });
+  }
+
+  return mirrors;
+}
+
+function localKindJuicefsConfigsValue(mirrors: readonly LocalKindJuicefsCaMirror[]): string | undefined {
+  if (mirrors.length === 0) {
+    return undefined;
+  }
+
+  return JSON.stringify(Object.fromEntries(mirrors.map((mirror) => [mirror.targetSecretName, mirror.mountDir])));
+}
+
+function localKindJuicefsEnvsValue(mirrors: readonly LocalKindJuicefsCaMirror[]): string | undefined {
+  const objectStorageMirror = mirrors.find((mirror) => mirror.service === 'object-storage');
+  return objectStorageMirror
+    ? JSON.stringify({ SSL_CERT_DIR: objectStorageMirror.mountDir })
+    : undefined;
+}
+
+function localKindAfscpVolumeCredential(options: {
+  namespace: string;
+  substrateTruth: Record<string, string>;
+  volumeMetaUrl: string;
+  volumeBucket: string;
+  configs?: string;
+  envs?: string;
+}): AfscpVolumeCredentialRevisionInput {
+  return {
+    name: `${options.namespace}-afscp-default`,
+    metaurl: options.volumeMetaUrl,
+    storage: 'minio',
+    bucket: options.volumeBucket,
+    accessKey: options.substrateTruth.SUBSTRATE_MINIO_ACCESS_KEY,
+    secretKey: options.substrateTruth.SUBSTRATE_MINIO_SECRET_KEY,
+    ...(options.configs ? { configs: options.configs } : {}),
+    ...(options.envs ? { envs: options.envs } : {}),
+  };
+}
+
+function serializeSiteEnv(values: Record<string, string>): string {
+  return `${Object.entries(values)
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n')}\n`;
+}
+
 function localKindExistingSecretsYaml(options: {
   namespace: string;
   siteEnv: Record<string, string>;
@@ -561,12 +696,61 @@ function localKindExistingSecretsYaml(options: {
   const productToken = localDiagnosticSecretValue(options.siteEnv, 'AFSCP_SERVICE_TOKEN', DEFAULT_AFSCP_SERVICE_TOKEN);
   const bootstrapToken = localDiagnosticSecretValue(options.siteEnv, 'AFSCP_BOOTSTRAP_SERVICE_TOKEN', DEFAULT_AFSCP_BOOTSTRAP_SERVICE_TOKEN);
   const orchestratorToken = localDiagnosticSecretValue(options.siteEnv, 'AFSCP_ORCHESTRATOR_SERVICE_TOKEN', DEFAULT_AFSCP_ORCHESTRATOR_SERVICE_TOKEN);
-  const postgresDsn = `postgresql://${options.substrateTruth.SUBSTRATE_POSTGRES_USER}:${options.substrateTruth.SUBSTRATE_POSTGRES_PASSWORD}@substrate-postgresql:${SUBSTRATE_NATIVE_PORTS.postgresql}/${options.substrateTruth.SUBSTRATE_POSTGRES_DATABASE}?sslmode=disable`;
-  const appDatabaseUrl = `postgresql://${options.substrateTruth.SUBSTRATE_POSTGRES_USER}:${options.substrateTruth.SUBSTRATE_POSTGRES_PASSWORD}@substrate-postgresql:${SUBSTRATE_NATIVE_PORTS.postgresql}/${options.substrateTruth.SUBSTRATE_POSTGRES_DATABASE}`;
-  const mongoUrl = `mongodb://${options.substrateTruth.SUBSTRATE_MONGODB_USER}:${options.substrateTruth.SUBSTRATE_MONGODB_PASSWORD}@substrate-mongodb:${SUBSTRATE_NATIVE_PORTS.mongodb}/admin`;
-  const redisUrl = `redis://:${options.substrateTruth.SUBSTRATE_REDIS_PASSWORD}@substrate-redis:${SUBSTRATE_NATIVE_PORTS.redis}/0`;
-  const volumeMetaUrl = `postgres://${options.substrateTruth.SUBSTRATE_POSTGRES_USER}:${options.substrateTruth.SUBSTRATE_POSTGRES_PASSWORD}@${substrateServiceFqdn('postgresql', options.namespace)}:${SUBSTRATE_NATIVE_PORTS.postgresql}/${options.substrateTruth.SUBSTRATE_POSTGRES_DATABASE}?sslmode=disable`;
-  const volumeBucket = `${substrateMinioInternalMountEndpoint(options.namespace)}/${options.substrateTruth.SUBSTRATE_MINIO_BUCKET}`;
+  const caProjection = resolveSubstrateCaProjection(options.substrateTruth, options.namespace);
+  const postgresCa = substrateCaForService(caProjection, 'postgresql');
+  const mongoCa = substrateCaForService(caProjection, 'mongodb');
+  const objectStorageCa = substrateCaForService(caProjection, 'object-storage');
+  const postgresSslMode = normalizedPostgresSslMode(options.substrateTruth);
+  const postgresTlsEnabled = postgresSslMode !== 'disable';
+  const mongoTlsEnabled = isSubstrateTlsEnabled(substrateTlsModeForService(options.substrateTruth, 'mongodb'));
+  const redisTlsEnabled = isSubstrateTlsEnabled(substrateTlsModeForService(options.substrateTruth, 'redis'));
+  const objectStorageTlsEnabled = isSubstrateTlsEnabled(substrateTlsModeForService(options.substrateTruth, 'object-storage'));
+  const postgresTlsParams = postgresTlsEnabled
+    ? queryString({
+      sslmode: postgresSslMode,
+      ...(postgresCa ? { sslrootcert: postgresCa.caFilePath } : {}),
+    })
+    : '';
+  const afscpPostgresParams = queryString(
+    postgresTlsEnabled
+      ? {
+        sslmode: postgresSslMode,
+        ...(postgresCa ? { sslrootcert: postgresCa.caFilePath } : {}),
+      }
+      : { sslmode: 'disable' },
+  );
+  const appDatabaseUrlBase = `postgresql://${options.substrateTruth.SUBSTRATE_POSTGRES_USER}:${options.substrateTruth.SUBSTRATE_POSTGRES_PASSWORD}@substrate-postgresql:${SUBSTRATE_NATIVE_PORTS.postgresql}/${options.substrateTruth.SUBSTRATE_POSTGRES_DATABASE}`;
+  const appDatabaseUrl = postgresTlsParams ? `${appDatabaseUrlBase}?${postgresTlsParams}` : appDatabaseUrlBase;
+  const postgresDsn = `postgresql://${options.substrateTruth.SUBSTRATE_POSTGRES_USER}:${options.substrateTruth.SUBSTRATE_POSTGRES_PASSWORD}@substrate-postgresql:${SUBSTRATE_NATIVE_PORTS.postgresql}/${options.substrateTruth.SUBSTRATE_POSTGRES_DATABASE}?${afscpPostgresParams}`;
+  const mongoParams = mongoTlsEnabled
+    ? queryString({
+      tls: 'true',
+      ...(mongoCa ? { tlsCAFile: mongoCa.caFilePath } : {}),
+    })
+    : '';
+  const mongoUrl = `mongodb://${options.substrateTruth.SUBSTRATE_MONGODB_USER}:${options.substrateTruth.SUBSTRATE_MONGODB_PASSWORD}@substrate-mongodb:${SUBSTRATE_NATIVE_PORTS.mongodb}/admin${mongoParams ? `?${mongoParams}` : ''}`;
+  const redisUrl = `${redisTlsEnabled ? 'rediss' : 'redis'}://:${options.substrateTruth.SUBSTRATE_REDIS_PASSWORD}@substrate-redis:${SUBSTRATE_NATIVE_PORTS.redis}/0`;
+  const volumeMetaUrl = `postgres://${options.substrateTruth.SUBSTRATE_POSTGRES_USER}:${options.substrateTruth.SUBSTRATE_POSTGRES_PASSWORD}@${substrateServiceFqdn('postgresql', options.namespace)}:${SUBSTRATE_NATIVE_PORTS.postgresql}/${options.substrateTruth.SUBSTRATE_POSTGRES_DATABASE}?${afscpPostgresParams}`;
+  const volumeBucket = `${substrateMinioInternalMountEndpoint(options.namespace, objectStorageTlsEnabled ? 'https' : 'http')}/${options.substrateTruth.SUBSTRATE_MINIO_BUCKET}`;
+  const juicefsCaMirrors = localKindJuicefsCaMirrors({
+    namespace: options.namespace,
+    postgresCa,
+    objectStorageCa,
+    objectStorageTlsEnabled,
+    volumeMetaUrl,
+  });
+  const juicefsConfigs = localKindJuicefsConfigsValue(juicefsCaMirrors);
+  const juicefsEnvs = localKindJuicefsEnvsValue(juicefsCaMirrors);
+  const volumeCredential = localKindAfscpVolumeCredential({
+    namespace: options.namespace,
+    substrateTruth: options.substrateTruth,
+    volumeMetaUrl,
+    volumeBucket,
+    configs: juicefsConfigs,
+    envs: juicefsEnvs,
+  });
+  const volumeRevision = afscpVolumeCredentialRevision(volumeCredential);
+  const revisionedVolumeRef = afscpRevisionedVolumeRef(volumeRef, volumeRevision);
   const documents: Array<{ name: string; data: Record<string, string> }> = [
     {
       name: appRef,
@@ -598,14 +782,16 @@ function localKindExistingSecretsYaml(options: {
       },
     },
     {
-      name: volumeRef,
+      name: revisionedVolumeRef,
       data: {
-        name: `${options.namespace}-afscp-default`,
-        metaurl: volumeMetaUrl,
-        storage: 'minio',
-        bucket: volumeBucket,
-        'access-key': options.substrateTruth.SUBSTRATE_MINIO_ACCESS_KEY,
-        'secret-key': options.substrateTruth.SUBSTRATE_MINIO_SECRET_KEY,
+        name: volumeCredential.name ?? '',
+        metaurl: volumeCredential.metaurl,
+        storage: volumeCredential.storage,
+        bucket: volumeCredential.bucket,
+        'access-key': volumeCredential.accessKey ?? '',
+        'secret-key': volumeCredential.secretKey ?? '',
+        ...(volumeCredential.configs ? { configs: volumeCredential.configs } : {}),
+        ...(volumeCredential.envs ? { envs: volumeCredential.envs } : {}),
       },
     },
   ];
@@ -1157,6 +1343,166 @@ async function rolloutDeployment(options: {
 function parseJsonObject(source: string): Record<string, unknown> {
   const parsed = JSON.parse(source) as unknown;
   return asRecord(parsed);
+}
+
+function localKindJuicefsCaMirrorYaml(
+  mirror: LocalKindJuicefsCaMirror,
+  caData: string,
+): string {
+  return [
+    'apiVersion: v1',
+    'kind: Secret',
+    'metadata:',
+    `  name: ${mirror.targetSecretName}`,
+    `  namespace: ${mirror.targetNamespace}`,
+    '  labels:',
+    '    app.kubernetes.io/name: agentsmith',
+    '    app.kubernetes.io/part-of: agentsmith-local-diagnostic',
+    `    agentsmith.mbos.dev/secret-role: juicefs-csi-${mirror.service}-ca-mirror`,
+    '  annotations:',
+    `    agentsmith.mbos.dev/mirrored-from: ${mirror.sourceNamespace}/${mirror.sourceSecretName}`,
+    'type: Opaque',
+    'data:',
+    `  ${mirror.targetKey}: ${caData}`,
+    '',
+  ].join('\n');
+}
+
+async function loadLocalKindSecretData(options: {
+  service: LocalKindJuicefsCaMirrorService;
+  namespace: string;
+  secretName: string;
+  kubeconfigPath: string;
+  runner: LocalKindCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ data?: Record<string, string>; failure?: CheckFailure }> {
+  const args = [
+    ...kubeBaseArgs(options.kubeconfigPath),
+    '-n',
+    options.namespace,
+    'get',
+    'secret',
+    options.secretName,
+    '-o',
+    'json',
+  ];
+  const result = await options.runner('kubectl', args, {
+    cwd: REPO_ROOT,
+    env: {
+      ...options.env,
+      KUBECONFIG: options.kubeconfigPath,
+    },
+    timeoutMs: KUBECTL_TIMEOUT_MS,
+  });
+
+  if (result.exitCode !== 0) {
+    return {
+      failure: {
+        path: `kubectl:afscp-storage-csi-${options.service}-ca-mirror-source:${options.namespace}/${options.secretName}`,
+        message: redactDiagnostic(result.stderr || result.stdout || `kubectl exited ${result.exitCode}`, options.secretValues),
+      },
+    };
+  }
+
+  try {
+    const secret = parseJsonObject(result.stdout);
+    const data = asRecord(secret.data);
+    return {
+      data: Object.fromEntries(
+        Object.entries(data).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+      ),
+    };
+  } catch (error: unknown) {
+    return {
+      failure: {
+        path: `kubectl:afscp-storage-csi-${options.service}-ca-mirror-source:${options.namespace}/${options.secretName}`,
+        message: `source ${options.service} CA Secret JSON must parse before mirroring to the JuiceFS CSI mount namespace: ${errorMessage(error)}`,
+      },
+    };
+  }
+}
+
+function localKindJuicefsCaMirrorOperationName(
+  mirror: LocalKindJuicefsCaMirror,
+  phase: 'dry-run' | 'apply',
+): OperationEvidence['name'] {
+  if (mirror.service === 'postgresql') {
+    return phase === 'dry-run'
+      ? 'afscp-storage-csi-postgres-ca-mirror-dry-run'
+      : 'afscp-storage-csi-postgres-ca-mirror-apply';
+  }
+
+  return phase === 'dry-run'
+    ? 'afscp-storage-csi-object-storage-ca-mirror-dry-run'
+    : 'afscp-storage-csi-object-storage-ca-mirror-apply';
+}
+
+async function materializeLocalKindJuicefsCaMirror(options: {
+  mirror: LocalKindJuicefsCaMirror;
+  baseArgs: string[];
+  kubeconfigPath: string;
+  runner: LocalKindCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ operations: OperationEvidence[]; failures: CheckFailure[] }> {
+  const source = await loadLocalKindSecretData({
+    service: options.mirror.service,
+    namespace: options.mirror.sourceNamespace,
+    secretName: options.mirror.sourceSecretName,
+    kubeconfigPath: options.kubeconfigPath,
+    runner: options.runner,
+    env: options.env,
+    secretValues: options.secretValues,
+  });
+  if (source.failure) {
+    return { operations: [], failures: [source.failure] };
+  }
+
+  const caData = source.data?.[options.mirror.sourceKey];
+  if (!caData) {
+    return {
+      operations: [],
+      failures: [{
+        path: `kubectl:afscp-storage-csi-${options.mirror.service}-ca-mirror-source:${options.mirror.sourceNamespace}/${options.mirror.sourceSecretName}`,
+        message: `source ${options.mirror.service} CA Secret must include key ${options.mirror.sourceKey} before mirroring to ${options.mirror.targetNamespace}/${options.mirror.targetSecretName}`,
+      }],
+    };
+  }
+
+  const mirrorYaml = localKindJuicefsCaMirrorYaml(options.mirror, caData);
+  const operations: OperationEvidence[] = [];
+  const failures: CheckFailure[] = [];
+
+  for (const step of [
+    {
+      name: localKindJuicefsCaMirrorOperationName(options.mirror, 'dry-run'),
+      args: [...options.baseArgs, 'apply', '--dry-run=server', '-f', '-'],
+      input: mirrorYaml,
+    },
+    {
+      name: localKindJuicefsCaMirrorOperationName(options.mirror, 'apply'),
+      args: [...options.baseArgs, 'apply', '-f', '-'],
+      input: mirrorYaml,
+    },
+  ] as const) {
+    const result = await runKubectlOperation({
+      name: step.name,
+      args: step.args,
+      input: step.input,
+      runner: options.runner,
+      env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
+      secretValues: options.secretValues,
+    });
+    operations.push(result.evidence);
+    if (result.failure) {
+      failures.push(result.failure);
+      return { operations, failures };
+    }
+  }
+
+  return { operations, failures };
 }
 
 async function kubectlJson(options: {
@@ -1893,6 +2239,245 @@ function afscpStaticVolumeResetDiffEvidence(params: {
   };
 }
 
+type JuicefsCacheMetadata = {
+  name: string;
+  uid: string;
+  podType: string;
+  volumeId: string;
+  uniqueId: string;
+  juicefsSecret: string;
+  ownerRefs: Array<{ kind: string; name: string; uid: string }>;
+};
+
+const JUICEFS_CACHE_METADATA_TEMPLATE = [
+  '{{range .items}}',
+  '{{.metadata.name}}{{"\\t"}}',
+  '{{.metadata.uid}}{{"\\t"}}',
+  '{{index .metadata.labels "app.kubernetes.io/name"}}{{"\\t"}}',
+  '{{index .metadata.labels "volume-id"}}{{"\\t"}}',
+  '{{index .metadata.annotations "juicefs-uniqueid"}}{{"\\t"}}',
+  '{{index .metadata.labels "juicefs/secret"}}{{"\\t"}}',
+  '{{range .metadata.ownerReferences}}{{.kind}}/{{.name}}/{{.uid}};{{end}}',
+  '{{"\\n"}}',
+  '{{end}}',
+].join('');
+
+function cleanMetadataTemplateValue(value: string | undefined): string {
+  const normalized = value?.trim() ?? '';
+  return normalized === '<no value>' ? '' : normalized;
+}
+
+function parseOwnerRefs(value: string): Array<{ kind: string; name: string; uid: string }> {
+  return value.split(';').flatMap((entry) => {
+    const [kind, name, uid] = entry.split('/');
+    if (!kind || !name || !uid) {
+      return [];
+    }
+
+    return [{ kind, name, uid }];
+  });
+}
+
+function parseJuicefsCacheMetadata(source: string): JuicefsCacheMetadata[] {
+  return source.split(/\r?\n/u).flatMap((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    const [name, uid, podType, volumeId, uniqueId, juicefsSecret, ownerRefs] = trimmed.split('\t');
+    const cleanName = cleanMetadataTemplateValue(name);
+    if (!cleanName) {
+      return [];
+    }
+
+    return [{
+      name: cleanName,
+      uid: cleanMetadataTemplateValue(uid),
+      podType: cleanMetadataTemplateValue(podType),
+      volumeId: cleanMetadataTemplateValue(volumeId),
+      uniqueId: cleanMetadataTemplateValue(uniqueId),
+      juicefsSecret: cleanMetadataTemplateValue(juicefsSecret),
+      ownerRefs: parseOwnerRefs(cleanMetadataTemplateValue(ownerRefs)),
+    }];
+  });
+}
+
+function isAfscpJuicefsMountPod(candidate: JuicefsCacheMetadata, desired: DesiredAfscpStaticVolume): boolean {
+  return candidate.podType === 'juicefs-mount'
+    && candidate.volumeId === desired.pvName
+    && candidate.uniqueId === desired.pvName;
+}
+
+function isAfscpJuicefsGeneratedSecret(
+  candidate: JuicefsCacheMetadata,
+  desired: DesiredAfscpStaticVolume,
+  mountPods: readonly JuicefsCacheMetadata[],
+): boolean {
+  if (!candidate.juicefsSecret) {
+    return false;
+  }
+
+  const mountPodNames = new Set(mountPods.map((pod) => pod.name));
+  const mountPodUids = new Set(mountPods.map((pod) => pod.uid).filter(Boolean));
+  const hasMountPodOwner = candidate.ownerRefs.some((ownerRef) =>
+    ownerRef.kind === 'Pod'
+    && (mountPodNames.has(ownerRef.name) || mountPodUids.has(ownerRef.uid)),
+  );
+  const hasDirectVolumeIdentity = candidate.volumeId === desired.pvName && candidate.uniqueId === desired.pvName;
+  return hasMountPodOwner || hasDirectVolumeIdentity;
+}
+
+function afscpStaticVolumeCredentialRefDrift(pvDiff: readonly ResetSpecDiff[]): boolean {
+  return pvDiff.some((diff) => diff.path.startsWith('spec.csi.nodePublishSecretRef.'));
+}
+
+async function resetOwnedAfscpJuicefsMountCache(options: {
+  desired: DesiredAfscpStaticVolume;
+  baseArgs: readonly string[];
+  kubeconfigPath: string;
+  runner: LocalKindCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ operations: OperationEvidence[]; failures: CheckFailure[] }> {
+  const operations: OperationEvidence[] = [];
+  const failures: CheckFailure[] = [];
+  const podList = await runKubectlCheck({
+    name: 'afscp-static-volume-reset-check-juicefs-cache',
+    args: [
+      ...options.baseArgs,
+      '-n',
+      AFSCP_STORAGE_CSI_NAMESPACE,
+      'get',
+      'pods',
+      '-l',
+      `app.kubernetes.io/name=juicefs-mount,volume-id=${options.desired.pvName}`,
+      '-o',
+      `go-template=${JUICEFS_CACHE_METADATA_TEMPLATE}`,
+      '--ignore-not-found',
+    ],
+    runner: options.runner,
+    env: options.env,
+    kubeconfigPath: options.kubeconfigPath,
+    secretValues: options.secretValues,
+  });
+  operations.push(podList.evidence);
+  if (podList.failure) {
+    failures.push({
+      path: 'afscp-static-volume:juicefs-cache-check',
+      message: `could not inspect live JuiceFS mount cache metadata before static PV/PVC reset: ${podList.failure.message}`,
+    });
+    return { operations, failures };
+  }
+
+  const secretList = await runKubectlCheck({
+    name: 'afscp-static-volume-reset-check-juicefs-generated-secrets',
+    args: [
+      ...options.baseArgs,
+      '-n',
+      AFSCP_STORAGE_CSI_NAMESPACE,
+      'get',
+      'secrets',
+      '-l',
+      'juicefs/secret',
+      '-o',
+      `go-template=${JUICEFS_CACHE_METADATA_TEMPLATE}`,
+      '--ignore-not-found',
+    ],
+    runner: options.runner,
+    env: options.env,
+    kubeconfigPath: options.kubeconfigPath,
+    secretValues: options.secretValues,
+  });
+  operations.push(secretList.evidence);
+  if (secretList.failure) {
+    failures.push({
+      path: 'afscp-static-volume:juicefs-generated-secret-check',
+      message: `could not inspect live JuiceFS generated Secret cache metadata before static PV/PVC reset: ${secretList.failure.message}`,
+    });
+    return { operations, failures };
+  }
+
+  let podCandidates: JuicefsCacheMetadata[];
+  let secretCandidates: JuicefsCacheMetadata[];
+  try {
+    podCandidates = parseJuicefsCacheMetadata(podList.raw.stdout);
+    secretCandidates = parseJuicefsCacheMetadata(secretList.raw.stdout);
+  } catch (error: unknown) {
+    failures.push({
+      path: 'afscp-static-volume:juicefs-cache-check',
+      message: `live JuiceFS mount cache metadata must parse before static PV/PVC reset: ${errorMessage(error)}`,
+    });
+    return { operations, failures };
+  }
+
+  const mountPods = podCandidates.filter((candidate) => isAfscpJuicefsMountPod(candidate, options.desired));
+  const generatedSecrets = secretCandidates.filter((candidate) =>
+    isAfscpJuicefsGeneratedSecret(candidate, options.desired, mountPods),
+  );
+  const mountPodNames = [...new Set(mountPods.map((pod) => pod.name))].sort();
+  const generatedSecretNames = [...new Set(generatedSecrets.map((secret) => secret.name))].sort();
+
+  if (mountPodNames.length > 0) {
+    const podDelete = await runKubectlCheck({
+      name: 'afscp-static-volume-reset-delete-juicefs-mount-pods',
+      args: [
+        ...options.baseArgs,
+        '-n',
+        AFSCP_STORAGE_CSI_NAMESPACE,
+        'delete',
+        'pod',
+        ...mountPodNames,
+        '--ignore-not-found=true',
+        '--wait=true',
+        '--timeout=90s',
+      ],
+      runner: options.runner,
+      env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
+      secretValues: options.secretValues,
+    });
+    operations.push(podDelete.evidence);
+    if (podDelete.failure) {
+      failures.push({
+        path: 'afscp-static-volume:delete-juicefs-mount-pods',
+        message: `failed to delete owned stale JuiceFS Mount Pod cache before static PV/PVC reset: ${podDelete.failure.message}`,
+      });
+      return { operations, failures };
+    }
+  }
+
+  if (generatedSecretNames.length > 0) {
+    const secretDelete = await runKubectlCheck({
+      name: 'afscp-static-volume-reset-delete-juicefs-generated-secrets',
+      args: [
+        ...options.baseArgs,
+        '-n',
+        AFSCP_STORAGE_CSI_NAMESPACE,
+        'delete',
+        'secret',
+        ...generatedSecretNames,
+        '--ignore-not-found=true',
+        '--wait=true',
+        '--timeout=90s',
+      ],
+      runner: options.runner,
+      env: options.env,
+      kubeconfigPath: options.kubeconfigPath,
+      secretValues: options.secretValues,
+    });
+    operations.push(secretDelete.evidence);
+    if (secretDelete.failure) {
+      failures.push({
+        path: 'afscp-static-volume:delete-juicefs-generated-secrets',
+        message: `failed to delete owned stale JuiceFS generated Secret cache before static PV/PVC reset: ${secretDelete.failure.message}`,
+      });
+    }
+  }
+
+  return { operations, failures };
+}
+
 function parseOptionalKubectlResource(source: string): Record<string, unknown> | undefined {
   const trimmed = source.trim();
   if (!trimmed) {
@@ -2348,27 +2933,65 @@ async function renderInputs(options: {
   manifestPath?: string;
   templatesRoot?: string;
 }): Promise<RenderedInputs> {
-  const preflight = await renderUnifiedDeployPreflightFromFiles({
-    profile: 'local-kind',
-    siteEnvPath: options.siteEnvPath,
-    substrateTruthPath: options.substrateTruthPath,
-    manifestPath: options.manifestPath,
-    templatesRoot: options.templatesRoot,
-  });
-  const app = await renderUnifiedDeployFromFiles({
-    profile: 'local-kind',
-    siteEnvPath: options.siteEnvPath,
-    substrateTruthPath: options.substrateTruthPath,
-    manifestPath: options.manifestPath,
-    templatesRoot: options.templatesRoot,
-  });
   const siteEnv = parseSiteEnv(await readFile(options.siteEnvPath, 'utf8'));
   const substrateTruth = parseSubstrateTruth(await readFile(options.substrateTruthPath, 'utf8'), {
     sourcePath: options.substrateTruthPath,
   });
+  const caProjection = resolveSubstrateCaProjection(substrateTruth.values, siteEnv.NAMESPACE);
+  const postgresCa = substrateCaForService(caProjection, 'postgresql');
+  const objectStorageCa = substrateCaForService(caProjection, 'object-storage');
+  const postgresSslMode = normalizedPostgresSslMode(substrateTruth.values);
+  const postgresTlsParams = postgresSslMode === 'disable'
+    ? 'sslmode=disable'
+    : queryString({
+      sslmode: postgresSslMode,
+      ...(postgresCa ? { sslrootcert: postgresCa.caFilePath } : {}),
+    });
+  const volumeMetaUrl = `postgres://${substrateTruth.values.SUBSTRATE_POSTGRES_USER}:${substrateTruth.values.SUBSTRATE_POSTGRES_PASSWORD}@${substrateServiceFqdn('postgresql', siteEnv.NAMESPACE)}:${SUBSTRATE_NATIVE_PORTS.postgresql}/${substrateTruth.values.SUBSTRATE_POSTGRES_DATABASE}?${postgresTlsParams}`;
+  const objectStorageTlsEnabled = isSubstrateTlsEnabled(substrateTlsModeForService(substrateTruth.values, 'object-storage'));
+  const volumeBucket = `${substrateMinioInternalMountEndpoint(siteEnv.NAMESPACE, objectStorageTlsEnabled ? 'https' : 'http')}/${substrateTruth.values.SUBSTRATE_MINIO_BUCKET}`;
+  const juicefsCaMirrors = localKindJuicefsCaMirrors({
+    namespace: siteEnv.NAMESPACE,
+    postgresCa,
+    objectStorageCa,
+    objectStorageTlsEnabled,
+    volumeMetaUrl,
+  });
+  const juicefsConfigs = localKindJuicefsConfigsValue(juicefsCaMirrors);
+  const juicefsEnvs = localKindJuicefsEnvsValue(juicefsCaMirrors);
+  const volumeRevision = afscpVolumeCredentialRevision(localKindAfscpVolumeCredential({
+    namespace: siteEnv.NAMESPACE,
+    substrateTruth: substrateTruth.values,
+    volumeMetaUrl,
+    volumeBucket,
+    configs: juicefsConfigs,
+    envs: juicefsEnvs,
+  }));
+  const renderSiteEnv = {
+    ...siteEnv,
+    AFSCP_VOLUME_REF_REVISION: volumeRevision,
+  };
+  const renderSiteEnvSource = serializeSiteEnv(renderSiteEnv);
+  const preflight = await renderUnifiedDeployToString({
+    profile: 'local-kind',
+    siteEnv: renderSiteEnvSource,
+    siteEnvPath: options.siteEnvPath,
+    substrateTruthPath: options.substrateTruthPath,
+    manifestPath: options.manifestPath,
+    templatesRoot: options.templatesRoot,
+    templateGroup: 'local_kind_admin_preflight',
+  });
+  const app = await renderUnifiedDeployToString({
+    profile: 'local-kind',
+    siteEnv: renderSiteEnvSource,
+    siteEnvPath: options.siteEnvPath,
+    substrateTruthPath: options.substrateTruthPath,
+    manifestPath: options.manifestPath,
+    templatesRoot: options.templatesRoot,
+  });
   const localKindSecretsYaml = localKindExistingSecretsYaml({
     namespace: siteEnv.NAMESPACE,
-    siteEnv,
+    siteEnv: renderSiteEnv,
     substrateTruth: substrateTruth.values,
   });
 
@@ -2376,14 +2999,15 @@ async function renderInputs(options: {
     preflightYaml: preflight.output,
     appYaml: app.output,
     localKindExistingSecretsYaml: localKindSecretsYaml,
+    localKindJuicefsCaMirrors: juicefsCaMirrors,
     secretValues: mergeSecretValues(
       collectRenderedSecretValues(app.output),
       collectRenderedSecretValues(localKindSecretsYaml),
-      collectEnvSecretValues(siteEnv),
+      collectEnvSecretValues(renderSiteEnv),
       collectEnvSecretValues(substrateTruth.values),
     ),
     publicBaseUrl: siteEnv.PUBLIC_BASE_URL,
-    siteEnvValues: siteEnv,
+    siteEnvValues: renderSiteEnv,
   };
 }
 
@@ -2929,6 +3553,22 @@ async function resetOwnedAfscpStaticVolumeDrift(options: {
       message: `failed to delete AFSCP workloads before static PV/PVC reset: ${workloadDelete.failure.message}`,
     });
     return { operations, failures };
+  }
+
+  if (afscpStaticVolumeCredentialRefDrift(pvDiff)) {
+    const juicefsMountCache = await resetOwnedAfscpJuicefsMountCache({
+      desired,
+      baseArgs,
+      kubeconfigPath: options.kubeconfigPath,
+      runner: options.runner,
+      env: options.env,
+      secretValues: options.secretValues,
+    });
+    operations.push(...juicefsMountCache.operations);
+    failures.push(...juicefsMountCache.failures);
+    if (failures.length > 0) {
+      return { operations, failures };
+    }
   }
 
   if (livePvc) {
@@ -3815,6 +4455,7 @@ async function runApplySequence(options: {
   preflightYaml: string;
   appYaml: string;
   localKindExistingSecretsYaml: string;
+  localKindJuicefsCaMirrors: readonly LocalKindJuicefsCaMirror[];
   namespace: string;
   kubeconfigPath: string;
   runner: LocalKindCommandRunner;
@@ -3896,6 +4537,22 @@ async function runApplySequence(options: {
   failures.push(...ingressPreflight.failures);
   if (failures.length > 0) {
     return { operations, failures };
+  }
+
+  for (const caMirror of options.localKindJuicefsCaMirrors) {
+    const mirror = await materializeLocalKindJuicefsCaMirror({
+      mirror: caMirror,
+      baseArgs,
+      kubeconfigPath: options.kubeconfigPath,
+      runner: options.runner,
+      env: options.env,
+      secretValues: options.secretValues,
+    });
+    operations.push(...mirror.operations);
+    failures.push(...mirror.failures);
+    if (failures.length > 0) {
+      return { operations, failures };
+    }
   }
 
   const afscpStorageCsi = await ensureAfscpStorageCsiReady({
@@ -4395,6 +5052,7 @@ export async function runLocalKindRolloutProducer(
     preflightYaml: rendered.preflightYaml,
     appYaml: rendered.appYaml,
     localKindExistingSecretsYaml: rendered.localKindExistingSecretsYaml,
+    localKindJuicefsCaMirrors: rendered.localKindJuicefsCaMirrors,
     namespace: safety.namespace,
     kubeconfigPath: kubeconfig.path,
     runner,

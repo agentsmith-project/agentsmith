@@ -91,7 +91,9 @@ spec:
       labels:
         app.kubernetes.io/name: agentsmith
         app.kubernetes.io/component: afscp-schema-bootstrap
+        app.kubernetes.io/part-of: agentsmith-deploy
       annotations:
+        rendered-by: agentsmith-unified-deploy
         agentsmith.mbos.dev/checksum-afscp-config: "{{AFSCP_RUNTIME_CONFIG_CHECKSUM}}"
         agentsmith.mbos.dev/checksum-afscp-secrets: "{{AFSCP_RUNTIME_SECRETS_CHECKSUM}}"
     spec:
@@ -112,11 +114,14 @@ spec:
             - --apply
             - --check
             - --timeout=60s
+{{AFSCP_SUBSTRATE_CA_ENV}}
           envFrom:
             - configMapRef:
                 name: afscp-runtime-config
             - secretRef:
                 name: {{AFSCP_RUNTIME_REF}}
+{{AFSCP_SUBSTRATE_CA_VOLUME_MOUNTS_BLOCK}}
+{{AFSCP_SUBSTRATE_CA_VOLUMES_BLOCK}}
 ---
 apiVersion: v1
 kind: PersistentVolume
@@ -129,6 +134,9 @@ metadata:
   annotations:
     rendered-by: agentsmith-unified-deploy
 spec:
+  claimRef:
+    namespace: {{NAMESPACE}}
+    name: afscp-default-volume
   capacity:
     storage: {{AFSCP_DEFAULT_VOLUME_STORAGE_QUANTITY}}
   volumeMode: Filesystem
@@ -186,7 +194,9 @@ spec:
       labels:
         app.kubernetes.io/name: agentsmith
         app.kubernetes.io/component: afscp-volume-bootstrap
+        app.kubernetes.io/part-of: agentsmith-deploy
       annotations:
+        rendered-by: agentsmith-unified-deploy
         agentsmith.mbos.dev/checksum-afscp-config: "{{AFSCP_RUNTIME_CONFIG_CHECKSUM}}"
         agentsmith.mbos.dev/checksum-afscp-secrets: "{{AFSCP_RUNTIME_SECRETS_CHECKSUM}}"
     spec:
@@ -207,11 +217,13 @@ spec:
             - --apply
             - --check
             - --timeout=60s
+{{AFSCP_SUBSTRATE_CA_ENV}}
           envFrom:
             - configMapRef:
                 name: afscp-runtime-config
             - secretRef:
                 name: {{AFSCP_RUNTIME_REF}}
+{{AFSCP_SUBSTRATE_CA_VOLUME_MOUNTS_BLOCK}}
       containers:
         - name: afscp-volume-bootstrap
           image: "{{AFSCP_IMAGE}}"
@@ -221,11 +233,14 @@ spec:
             - --ensure
             - --check
             - --timeout=60s
+{{AFSCP_SUBSTRATE_CA_ENV}}
           envFrom:
             - configMapRef:
                 name: afscp-runtime-config
             - secretRef:
                 name: {{AFSCP_RUNTIME_REF}}
+{{AFSCP_SUBSTRATE_CA_VOLUME_MOUNTS_BLOCK}}
+{{AFSCP_SUBSTRATE_CA_VOLUMES_BLOCK}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -249,7 +264,9 @@ spec:
       labels:
         app.kubernetes.io/name: agentsmith
         app.kubernetes.io/component: afscp-api
+        app.kubernetes.io/part-of: agentsmith-deploy
       annotations:
+        rendered-by: agentsmith-unified-deploy
         agentsmith.mbos.dev/checksum-afscp-config: "{{AFSCP_RUNTIME_CONFIG_CHECKSUM}}"
         agentsmith.mbos.dev/checksum-afscp-secrets: "{{AFSCP_RUNTIME_SECRETS_CHECKSUM}}"
     spec:
@@ -268,11 +285,13 @@ spec:
           args:
             - --check
             - --timeout=60s
+{{AFSCP_SUBSTRATE_CA_ENV}}
           envFrom:
             - configMapRef:
                 name: afscp-runtime-config
             - secretRef:
                 name: {{AFSCP_RUNTIME_REF}}
+{{AFSCP_SUBSTRATE_CA_VOLUME_MOUNTS_BLOCK}}
       containers:
         - name: afscp-api
           image: "{{AFSCP_IMAGE}}"
@@ -285,6 +304,7 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+{{AFSCP_SUBSTRATE_CA_ENV}}
           envFrom:
             - configMapRef:
                 name: afscp-runtime-config
@@ -311,12 +331,14 @@ spec:
               mountPath: "{{AFSCP_VOLUME_ROOT_PATH}}"
             - name: afscp-jvs-cwd
               mountPath: "{{AFSCP_JVS_CWD_PATH}}"
+{{AFSCP_SUBSTRATE_CA_VOLUME_MOUNTS_ITEMS}}
       volumes:
         - name: afscp-default-volume
           persistentVolumeClaim:
             claimName: afscp-default-volume
         - name: afscp-jvs-cwd
           emptyDir: {}
+{{AFSCP_SUBSTRATE_CA_VOLUMES_ITEMS}}
 ---
 apiVersion: v1
 kind: Service
@@ -360,7 +382,9 @@ spec:
       labels:
         app.kubernetes.io/name: agentsmith
         app.kubernetes.io/component: afscp-worker
+        app.kubernetes.io/part-of: agentsmith-deploy
       annotations:
+        rendered-by: agentsmith-unified-deploy
         agentsmith.mbos.dev/checksum-afscp-config: "{{AFSCP_RUNTIME_CONFIG_CHECKSUM}}"
         agentsmith.mbos.dev/checksum-afscp-secrets: "{{AFSCP_RUNTIME_SECRETS_CHECKSUM}}"
     spec:
@@ -377,11 +401,13 @@ spec:
           args:
             - --check
             - --timeout=60s
+{{AFSCP_SUBSTRATE_CA_ENV}}
           envFrom:
             - configMapRef:
                 name: afscp-runtime-config
             - secretRef:
                 name: {{AFSCP_RUNTIME_REF}}
+{{AFSCP_SUBSTRATE_CA_VOLUME_MOUNTS_BLOCK}}
       containers:
         - name: afscp-worker
           image: "{{AFSCP_IMAGE}}"
@@ -390,6 +416,7 @@ spec:
           args:
             - --loop
             - --interval=2s
+{{AFSCP_SUBSTRATE_CA_ENV}}
           envFrom:
             - configMapRef:
                 name: afscp-runtime-config
@@ -400,12 +427,14 @@ spec:
               mountPath: "{{AFSCP_VOLUME_ROOT_PATH}}"
             - name: afscp-jvs-cwd
               mountPath: "{{AFSCP_JVS_CWD_PATH}}"
+{{AFSCP_SUBSTRATE_CA_VOLUME_MOUNTS_ITEMS}}
       volumes:
         - name: afscp-default-volume
           persistentVolumeClaim:
             claimName: afscp-default-volume
         - name: afscp-jvs-cwd
           emptyDir: {}
+{{AFSCP_SUBSTRATE_CA_VOLUMES_ITEMS}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -429,7 +458,9 @@ spec:
       labels:
         app.kubernetes.io/name: agentsmith
         app.kubernetes.io/component: afscp-export-gateway
+        app.kubernetes.io/part-of: agentsmith-deploy
       annotations:
+        rendered-by: agentsmith-unified-deploy
         agentsmith.mbos.dev/checksum-afscp-config: "{{AFSCP_RUNTIME_CONFIG_CHECKSUM}}"
         agentsmith.mbos.dev/checksum-afscp-secrets: "{{AFSCP_RUNTIME_SECRETS_CHECKSUM}}"
     spec:
@@ -446,11 +477,13 @@ spec:
           args:
             - --check
             - --timeout=60s
+{{AFSCP_SUBSTRATE_CA_ENV}}
           envFrom:
             - configMapRef:
                 name: afscp-runtime-config
             - secretRef:
                 name: {{AFSCP_RUNTIME_REF}}
+{{AFSCP_SUBSTRATE_CA_VOLUME_MOUNTS_BLOCK}}
       containers:
         - name: afscp-export-gateway
           image: "{{AFSCP_IMAGE}}"
@@ -463,6 +496,7 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+{{AFSCP_SUBSTRATE_CA_ENV}}
           envFrom:
             - configMapRef:
                 name: afscp-runtime-config
@@ -487,12 +521,14 @@ spec:
               mountPath: "{{AFSCP_VOLUME_ROOT_PATH}}"
             - name: afscp-jvs-cwd
               mountPath: "{{AFSCP_JVS_CWD_PATH}}"
+{{AFSCP_SUBSTRATE_CA_VOLUME_MOUNTS_ITEMS}}
       volumes:
         - name: afscp-default-volume
           persistentVolumeClaim:
             claimName: afscp-default-volume
         - name: afscp-jvs-cwd
           emptyDir: {}
+{{AFSCP_SUBSTRATE_CA_VOLUMES_ITEMS}}
 ---
 apiVersion: v1
 kind: Service

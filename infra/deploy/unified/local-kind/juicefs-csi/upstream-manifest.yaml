@@ -882,6 +882,9 @@ spec:
           name: jfs-root-dir
         - mountPath: /etc/config
           name: juicefs-config
+        - mountPath: /etc/agentsmith/substrate-ca/postgresql
+          name: agentsmith-substrate-postgresql-ca
+          readOnly: true
         - mountPath: /tmp
           name: jfs-fuse-fd
       - args:
@@ -950,6 +953,13 @@ spec:
           defaultMode: 420
           name: juicefs-csi-driver-config
         name: juicefs-config
+      - name: agentsmith-substrate-postgresql-ca
+        secret:
+          optional: true
+          secretName: postgresql-ca
+          items:
+          - key: ca.crt
+            path: ca.crt
       - hostPath:
           path: /var/run/juicefs-csi
           type: DirectoryOrCreate

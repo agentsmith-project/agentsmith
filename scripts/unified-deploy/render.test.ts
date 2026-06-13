@@ -10,6 +10,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_SITE_ENV_PATH,
+  afscpRevisionedVolumeRef,
+  afscpVolumeCredentialRevision,
   parseSiteEnv,
   renderUnifiedDeployPreflightFromFiles,
   renderUnifiedDeployFromFiles,
@@ -22,6 +24,13 @@ import { DEFAULT_MANIFEST_PATH } from './manifest';
 const tempRoots: string[] = [];
 const fixturesDir = join(process.cwd(), 'scripts', 'unified-deploy', '__fixtures__');
 const asbcpImageLockPath = join(process.cwd(), 'infra', 'deploy', 'shared', 'asbcp-image.lock');
+const afscpPodTemplateWorkloads = [
+  ['Job', 'afscp-schema-bootstrap'],
+  ['Job', 'afscp-volume-bootstrap'],
+  ['Deployment', 'afscp-api'],
+  ['Deployment', 'afscp-worker'],
+  ['Deployment', 'afscp-export-gateway'],
+] as const;
 
 function readAsbcpLockSourceRef(): string {
   const match = /^asbcp_source_image=(.+)$/mu.exec(readFileSync(asbcpImageLockPath, 'utf8'));
@@ -136,6 +145,24 @@ function replaceEnvLine(source: string, key: string, value: string): string {
   return source.replace(new RegExp(`^${key}=.*$`, 'mu'), `${key}=${value}`);
 }
 
+function withStrictTlsSubstrateTruth(source: string): string {
+  return `${source}
+SUBSTRATE_POSTGRES_TLS_MODE=verify-full
+SUBSTRATE_POSTGRES_CA_SECRET_REF=secretRef:agentsmith/postgresql-ca
+SUBSTRATE_MONGODB_TLS_MODE=verify-full
+SUBSTRATE_MONGODB_CA_SECRET_REF=secretRef:agentsmith/mongodb-ca
+SUBSTRATE_REDIS_TLS_MODE=verify-full
+SUBSTRATE_REDIS_CA_SECRET_REF=secretRef:agentsmith/redis-ca
+SUBSTRATE_OBJECT_STORAGE_TLS_MODE=https
+SUBSTRATE_OBJECT_STORAGE_CA_SECRET_REF=secretRef:agentsmith/object-storage-ca
+SUBSTRATE_OIDC_TLS_MODE=https
+SUBSTRATE_OIDC_CA_SECRET_REF=secretRef:agentsmith/oidc-ca
+`.replace(
+    /^SUBSTRATE_KEYCLOAK_INTERNAL_BASE_URL=.*$/mu,
+    'SUBSTRATE_KEYCLOAK_INTERNAL_BASE_URL=https://substrate-keycloak:8080',
+  );
+}
+
 function runCheckRenderCli(args: readonly string[]) {
   const tsxCli = join(process.cwd(), 'node_modules', '.bin', 'tsx');
   return spawnSync(tsxCli, ['scripts/unified-deploy/check-render.ts', ...args], {
@@ -156,12 +183,44 @@ function deploymentPodSpec(
   return asRecord(asRecord(asRecord(asRecord(deployment.spec).template).spec));
 }
 
+function jobPodSpec(
+  documents: readonly Record<string, unknown>[],
+  jobName: string,
+): Record<string, unknown> {
+  const job = findResource(documents, 'Job', jobName);
+  return asRecord(asRecord(asRecord(job.spec).template).spec);
+}
+
 function deploymentPodTemplateAnnotations(
   documents: readonly Record<string, unknown>[],
   deploymentName: string,
 ): Record<string, unknown> {
-  const deployment = findResource(documents, 'Deployment', deploymentName);
-  return asRecord(asRecord(asRecord(asRecord(deployment.spec).template).metadata).annotations);
+  return workloadPodTemplateAnnotations(documents, 'Deployment', deploymentName);
+}
+
+function workloadPodTemplateMetadata(
+  documents: readonly Record<string, unknown>[],
+  kind: string,
+  name: string,
+): Record<string, unknown> {
+  const workload = findResource(documents, kind, name);
+  return asRecord(asRecord(asRecord(workload.spec).template).metadata);
+}
+
+function workloadPodTemplateLabels(
+  documents: readonly Record<string, unknown>[],
+  kind: string,
+  name: string,
+): Record<string, unknown> {
+  return asRecord(workloadPodTemplateMetadata(documents, kind, name).labels);
+}
+
+function workloadPodTemplateAnnotations(
+  documents: readonly Record<string, unknown>[],
+  kind: string,
+  name: string,
+): Record<string, unknown> {
+  return asRecord(workloadPodTemplateMetadata(documents, kind, name).annotations);
 }
 
 function deploymentContainerEnv(
@@ -455,6 +514,48 @@ describe('unified deploy render producer', () => {
     expect(afscpConfig.AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS).toBe('vol_agentsmith_default=agentsmith/custom-afscp-volume-juicefs');
   });
 
+  it('uses AFSCP volume credential revision as the rendered Secret identity', async () => {
+    const baseSiteEnv = await readFile(DEFAULT_SITE_ENV_PATH, 'utf8');
+    const revision = 'sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+    const siteEnv = [
+      ['AFSCP_VOLUME_REF', 'custom-afscp-volume-juicefs'],
+      ['AFSCP_VOLUME_REF_REVISION', revision],
+    ].reduce((source, [key, value]) => replaceEnvLine(source, key, value), baseSiteEnv);
+    const rendered = await renderUnifiedDeployToString({
+      profile: 'local-kind',
+      siteEnv,
+    });
+    const documents = parsedDocuments(rendered.output);
+    const afscpConfig = asRecord(findResource(documents, 'ConfigMap', 'afscp-runtime-config').data);
+    const pv = findResource(documents, 'PersistentVolume', 'agentsmith-afscp-default-volume');
+    const expectedVolumeRef = afscpRevisionedVolumeRef('custom-afscp-volume-juicefs', revision);
+
+    expect(expectedVolumeRef).toBe('custom-afscp-volume-juicefs-1234567890ab');
+    expect(checkRenderedOutput(rendered.output).ok).toBe(true);
+    expect(asRecord(asRecord(asRecord(pv.spec).csi).nodePublishSecretRef).name).toBe(expectedVolumeRef);
+    expect(afscpConfig.AFSCP_API_WORKLOAD_MOUNT_SECRET_REFS).toBe(`vol_agentsmith_default=agentsmith/${expectedVolumeRef}`);
+  });
+
+  it('includes JuiceFS mount pod envs in the AFSCP volume credential revision', () => {
+    const base = {
+      name: 'agentsmith-afscp-default',
+      metaurl: 'postgres://user:secret@substrate-postgresql.agentsmith.svc.cluster.local:5432/db?sslmode=verify-full&sslrootcert=/etc/agentsmith/substrate-ca/postgresql/ca.crt',
+      storage: 'minio',
+      bucket: 'https://substrate-minio.agentsmith.svc.cluster.local:9000/files',
+      accessKey: 'minio-access',
+      secretKey: 'minio-secret',
+      configs: '{"postgresql-ca":"/etc/agentsmith/substrate-ca/postgresql","object-storage-ca":"/etc/agentsmith/substrate-ca/object-storage"}',
+    };
+    const withoutEnvs = afscpVolumeCredentialRevision(base);
+    const withEnvs = afscpVolumeCredentialRevision({
+      ...base,
+      envs: '{"SSL_CERT_DIR":"/etc/agentsmith/substrate-ca/object-storage"}',
+    });
+
+    expect(withEnvs).toMatch(/^sha256:[a-f0-9]{64}$/u);
+    expect(withEnvs).not.toBe(withoutEnvs);
+  });
+
   it('derives ASBCP_IMAGE from the shared lock when site env leaves it unset', async () => {
     const root = tempDir('agentsmith-render-lock-asbcp-image-');
     const siteEnvPath = join(root, 'site.env');
@@ -670,6 +771,37 @@ describe('unified deploy render producer', () => {
       expect(checkRenderedOutput(rendered.output).ok).toBe(true);
     },
   );
+
+  it('renders AFSCP pod-template ownership markers for Jobs and Deployments', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+
+    for (const [kind, name] of afscpPodTemplateWorkloads) {
+      expect(workloadPodTemplateLabels(documents, kind, name)).toMatchObject({
+        'app.kubernetes.io/part-of': 'agentsmith-deploy',
+      });
+      expect(workloadPodTemplateAnnotations(documents, kind, name)).toMatchObject({
+        'rendered-by': 'agentsmith-unified-deploy',
+      });
+    }
+
+    expect(checkRenderedOutput(rendered.output).ok).toBe(true);
+  });
+
+  it('rejects AFSCP pod templates without ownership markers', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+
+    delete workloadPodTemplateLabels(documents, 'Job', 'afscp-schema-bootstrap')['app.kubernetes.io/part-of'];
+    delete workloadPodTemplateAnnotations(documents, 'Deployment', 'afscp-export-gateway')['rendered-by'];
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('Job/afscp-schema-bootstrap pod template must include app.kubernetes.io/part-of=agentsmith-deploy');
+    expect(text).toContain('Deployment/afscp-export-gateway pod template must include rendered-by=agentsmith-unified-deploy');
+  });
 
   it('keeps local-kind namespace creation in a separate admin preflight render', async () => {
     const appRendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
@@ -1253,6 +1385,10 @@ describe('unified deploy render producer', () => {
       runAsGroup: 65532,
     });
     expect(persistentVolumeSpec).toMatchObject({
+      claimRef: {
+        namespace: 'agentsmith',
+        name: 'afscp-default-volume',
+      },
       volumeMode: 'Filesystem',
       accessModes: ['ReadWriteMany'],
       persistentVolumeReclaimPolicy: 'Retain',
@@ -1457,6 +1593,19 @@ describe('unified deploy render producer', () => {
 
     expect(text).toContain('AFSCP workload mount Secret refs must point to the namespace-local JuiceFS CSI Secret');
     expect(text).toContain('AFSCP default PersistentVolume must use JuiceFS CSI with the namespace-local volume Secret');
+  });
+
+  it('rejects AFSCP PersistentVolume claimRef drift', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
+    const documents = parsedDocuments(rendered.output);
+    const persistentVolume = findResource(documents, 'PersistentVolume', 'agentsmith-afscp-default-volume');
+    delete asRecord(persistentVolume.spec).claimRef;
+
+    const text = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    expect(text).toContain('PersistentVolume claimRef must point to the namespace-local default PersistentVolumeClaim');
   });
 
   it('rejects AFSCP PV/PVC storage quantities that trigger Kubernetes fractional-byte warnings', async () => {
@@ -2029,6 +2178,143 @@ API_REPLICAS=2
     expect(config.KEYCLOAK_REALM).toBe('sentinel-realm');
     expect(config.KEYCLOAK_ADMIN_CLIENT_ID).toBe('admin-cli');
     expect(rendered.output).not.toContain('agentsmith-substrate-postgresql.local');
+  });
+
+  it('mounts substrate CA Secrets and trust env for substrate clients when substrate truth declares strict TLS', async () => {
+    const substrateTruth = withStrictTlsSubstrateTruth(
+      readFileSync(join(fixturesDir, 'substrate-truth.sentinel.env'), 'utf8'),
+    );
+    const rendered = await renderUnifiedDeployToString({
+      profile: 'existing-cluster',
+      substrateTruth,
+    });
+    const documents = parsedDocuments(rendered.output);
+    const config = asRecord(findResource(documents, 'ConfigMap', 'agentsmith-app-config').data);
+    const apiPodSpec = deploymentPodSpec(documents, 'agentsmith-api');
+    const api = deploymentContainer(documents, 'agentsmith-api', 'api');
+    const apiInit = podSpecContainer(apiPodSpec, 'initContainers', 'substrate-ca-bundle');
+    const apiVolumes = Array.isArray(apiPodSpec.volumes) ? apiPodSpec.volumes.map(asRecord) : [];
+    const apiVolumeMounts = Array.isArray(api.volumeMounts) ? api.volumeMounts.map(asRecord) : [];
+    const afscpSchemaPodSpec = jobPodSpec(documents, 'afscp-schema-bootstrap');
+    const afscpSchemaContainer = podSpecContainer(afscpSchemaPodSpec, 'containers', 'afscp-schema-bootstrap');
+    const afscpSchemaMounts = Array.isArray(afscpSchemaContainer.volumeMounts)
+      ? afscpSchemaContainer.volumeMounts.map(asRecord)
+      : [];
+    const envValue = (container: Record<string, unknown>, name: string): string | undefined => {
+      const env = Array.isArray(container.env) ? container.env.map(asRecord) : [];
+      const entry = env.find((item) => item.name === name);
+      return typeof entry?.value === 'string' ? entry.value : undefined;
+    };
+    const assertNoSubstrateCaProjection = (deploymentName: string, containerName: string): void => {
+      const podSpec = deploymentPodSpec(documents, deploymentName);
+      const container = deploymentContainer(documents, deploymentName, containerName);
+      const volumes = Array.isArray(podSpec.volumes) ? podSpec.volumes.map(asRecord) : [];
+      const mounts = Array.isArray(container.volumeMounts) ? container.volumeMounts.map(asRecord) : [];
+      expect(volumes.filter((volume) =>
+        volume.name === 'substrate-ca-bundle'
+        || (typeof volume.name === 'string' && /^substrate-[a-z0-9-]+-ca$/u.test(volume.name)),
+      )).toEqual([]);
+      expect(mounts.filter((mount) =>
+        mount.name === 'substrate-ca-bundle'
+        || (typeof mount.mountPath === 'string' && mount.mountPath.startsWith('/etc/agentsmith/substrate-ca')),
+      )).toEqual([]);
+      expect(envValue(container, 'NODE_EXTRA_CA_CERTS')).toBeUndefined();
+      expect(envValue(container, 'SSL_CERT_DIR')).toBeUndefined();
+    };
+
+    expect(checkRenderedOutput(rendered.output).ok).toBe(true);
+    expect(config.MINIO_USE_SSL).toBe('true');
+    expect(config.INTERNAL_KEYCLOAK_BASE_URL).toBe('https://substrate-keycloak:8080');
+
+    for (const [volumeName, secretName] of [
+      ['substrate-postgresql-ca', 'postgresql-ca'],
+      ['substrate-mongodb-ca', 'mongodb-ca'],
+      ['substrate-redis-ca', 'redis-ca'],
+      ['substrate-object-storage-ca', 'object-storage-ca'],
+      ['substrate-oidc-ca', 'oidc-ca'],
+    ] as const) {
+      const volume = apiVolumes.find((item) => item.name === volumeName);
+      expect(asRecord(volume?.secret).secretName).toBe(secretName);
+      expect(asRecord((asRecord(volume?.secret).items as Record<string, unknown>[] | undefined)?.[0])).toEqual({
+        key: 'ca.crt',
+        path: 'ca.crt',
+      });
+      expect(apiVolumeMounts).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          name: volumeName,
+          mountPath: expect.stringContaining('/etc/agentsmith/substrate-ca/'),
+          readOnly: true,
+        }),
+      ]));
+    }
+
+    expect(envValue(api, 'NODE_EXTRA_CA_CERTS')).toBe('/etc/agentsmith/substrate-ca-bundle/ca-bundle.crt');
+    expect(apiVolumes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'substrate-ca-bundle', emptyDir: {} }),
+    ]));
+    expect(apiVolumeMounts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'substrate-ca-bundle',
+        mountPath: '/etc/agentsmith/substrate-ca-bundle',
+        readOnly: true,
+      }),
+    ]));
+    expect(apiInit.image).toBe(asRecord(api).image);
+    expect(String(apiInit.args)).toContain('/etc/agentsmith/substrate-ca/postgresql/ca.crt');
+    expect(String(apiInit.args)).toContain('/etc/agentsmith/substrate-ca/object-storage/ca.crt');
+
+    expect(envValue(afscpSchemaContainer, 'SSL_CERT_DIR')).toContain('/etc/agentsmith/substrate-ca/postgresql');
+    expect(envValue(afscpSchemaContainer, 'SSL_CERT_DIR')).toContain('/etc/agentsmith/substrate-ca/object-storage');
+    expect(afscpSchemaMounts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'substrate-postgresql-ca',
+        mountPath: '/etc/agentsmith/substrate-ca/postgresql',
+        readOnly: true,
+      }),
+      expect.objectContaining({
+        name: 'substrate-object-storage-ca',
+        mountPath: '/etc/agentsmith/substrate-ca/object-storage',
+        readOnly: true,
+      }),
+    ]));
+    assertNoSubstrateCaProjection('agentsmith-llmup', 'llmup');
+    assertNoSubstrateCaProjection('agentsmith-sandbox-control-plane', 'asbcp');
+  });
+
+  it('projects non-default substrate CA Secret keys to the canonical ca.crt path', async () => {
+    const substrateTruth = `${withStrictTlsSubstrateTruth(
+      readFileSync(join(fixturesDir, 'substrate-truth.sentinel.env'), 'utf8'),
+    )}
+SUBSTRATE_POSTGRES_CA_SECRET_KEY=tls-ca.pem
+`;
+    const rendered = await renderUnifiedDeployToString({
+      profile: 'existing-cluster',
+      substrateTruth,
+    });
+    const documents = parsedDocuments(rendered.output);
+    const apiPodSpec = deploymentPodSpec(documents, 'agentsmith-api');
+    const apiVolumes = Array.isArray(apiPodSpec.volumes) ? apiPodSpec.volumes.map(asRecord) : [];
+    const postgresCaVolume = apiVolumes.find((volume) => volume.name === 'substrate-postgresql-ca');
+
+    expect(asRecord((asRecord(postgresCaVolume?.secret).items as Record<string, unknown>[] | undefined)?.[0])).toEqual({
+      key: 'tls-ca.pem',
+      path: 'ca.crt',
+    });
+    expect(rendered.output).toContain('key: "tls-ca.pem"');
+    expect(checkRenderedOutput(rendered.output).ok).toBe(true);
+  });
+
+  it('rejects unsafe substrate CA Secret keys before rendering YAML', async () => {
+    const substrateTruth = `${withStrictTlsSubstrateTruth(
+      readFileSync(join(fixturesDir, 'substrate-truth.sentinel.env'), 'utf8'),
+    )}
+SUBSTRATE_POSTGRES_CA_SECRET_KEY=ca.crt: {}
+`;
+
+    await expect(renderUnifiedDeployToString({
+      profile: 'existing-cluster',
+      substrateTruth,
+    })).rejects.toThrow(/SUBSTRATE_POSTGRES_CA_SECRET_KEY must be a Kubernetes Secret data key/u);
   });
 
   it('renders IPv4 EndpointSlice addressType for local-kind substrate gateway truth', async () => {

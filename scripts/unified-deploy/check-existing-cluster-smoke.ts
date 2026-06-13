@@ -197,6 +197,13 @@ type PreApplyPreflightEvidence = {
   operator_diagnostics: string[];
 };
 
+type JuicefsCsiMountNamespaceResolution = {
+  namespace: string;
+  source: 'env:value' | 'env:fieldRef:metadata.namespace' | 'workload-namespace' | 'bundled-default';
+  command: string;
+  diagnostic: string;
+};
+
 type ExistingClusterSmokeEvidence = {
   schema_version: 'agentsmith.unified-deploy.existing-cluster-smoke.evidence/v1';
   producer: 'existing-cluster-smoke';
@@ -293,6 +300,13 @@ const ASBCP_SERVICE_ACCOUNT = 'agentsmith-sandbox-control-plane';
 const AGENTSMITH_APP_SECRET = 'agentsmith-app-secrets';
 const AFSCP_RUNTIME_SECRET = 'afscp-runtime-secrets';
 const AFSCP_VOLUME_SECRET = 'afscp-default-volume-juicefs';
+const AFSCP_STORAGE_CSI_BUNDLED_MOUNT_NAMESPACE = 'kube-system';
+const AFSCP_STORAGE_CSI_MOUNT_NAMESPACE_ENV = 'JUICEFS_MOUNT_NAMESPACE';
+const AFSCP_STORAGE_CSI_WORKLOADS = [
+  { kind: 'StatefulSet', name: 'juicefs-csi-controller' },
+  { kind: 'Deployment', name: 'juicefs-csi-controller' },
+  { kind: 'DaemonSet', name: 'juicefs-csi-node' },
+] as const;
 const AFSCP_RUNTIME_CONFIG_MAP = 'afscp-runtime-config';
 const AGENTSMITH_APP_SECRET_KEYS = [
   'DATABASE_URL',
@@ -1546,6 +1560,11 @@ const ASBCP_NAMESPACE_RBAC_RENDER_CHECKS = [
 const ASBCP_RBAC_PREFLIGHT_CHECKS = [
   { name: 'persistentvolumes-get', path: 'preflight:rbac:asbcp:persistentvolumes:get', verb: 'get', resource: 'persistentvolumes', namespaceScoped: false },
   { name: 'persistentvolumes-list', path: 'preflight:rbac:asbcp:persistentvolumes:list', verb: 'list', resource: 'persistentvolumes', namespaceScoped: false },
+  { name: 'persistentvolumes-watch', path: 'preflight:rbac:asbcp:persistentvolumes:watch', verb: 'watch', resource: 'persistentvolumes', namespaceScoped: false },
+  { name: 'persistentvolumes-create', path: 'preflight:rbac:asbcp:persistentvolumes:create', verb: 'create', resource: 'persistentvolumes', namespaceScoped: false },
+  { name: 'persistentvolumes-update', path: 'preflight:rbac:asbcp:persistentvolumes:update', verb: 'update', resource: 'persistentvolumes', namespaceScoped: false },
+  { name: 'persistentvolumes-patch', path: 'preflight:rbac:asbcp:persistentvolumes:patch', verb: 'patch', resource: 'persistentvolumes', namespaceScoped: false },
+  { name: 'persistentvolumes-delete', path: 'preflight:rbac:asbcp:persistentvolumes:delete', verb: 'delete', resource: 'persistentvolumes', namespaceScoped: false },
 ] as const;
 
 function canIArgs(options: {
@@ -1622,6 +1641,389 @@ async function runRbacPreApplyPreflight(options: {
   return { checks, failures };
 }
 
+function decodeSecretDataValue(secret: Record<string, unknown>, key: string): string | undefined {
+  const encoded = asRecord(secret.data)[key];
+  if (typeof encoded !== 'string' || encoded.trim().length === 0) {
+    return undefined;
+  }
+
+  return Buffer.from(encoded, 'base64').toString('utf8');
+}
+
+function sslRootCertDirFromMetaUrl(metaurl: string): string | undefined {
+  try {
+    const sslRootCert = new URL(metaurl).searchParams.get('sslrootcert')?.trim();
+    return sslRootCert ? path.posix.dirname(sslRootCert) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function unquoteConfigValue(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length >= 2) {
+    const first = trimmed[0];
+    const last = trimmed[trimmed.length - 1];
+    if ((first === '"' && last === '"') || (first === '\'' && last === '\'')) {
+      return trimmed.slice(1, -1);
+    }
+  }
+
+  return trimmed;
+}
+
+function parseJuicefsConfigs(value: string): Record<string, string> {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    const record = asRecord(parsed);
+    return Object.fromEntries(
+      Object.entries(record).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    );
+  } catch {
+    const body = trimmed.startsWith('{') && trimmed.endsWith('}') ? trimmed.slice(1, -1) : trimmed;
+    return Object.fromEntries(
+      body
+        .split(/[,\n]/u)
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => {
+          const separatorIndex = entry.indexOf(':');
+          if (separatorIndex < 0) {
+            return undefined;
+          }
+          return [
+            unquoteConfigValue(entry.slice(0, separatorIndex)),
+            unquoteConfigValue(entry.slice(separatorIndex + 1)),
+          ] as const;
+        })
+        .filter((entry): entry is readonly [string, string] => Boolean(entry?.[0]) && Boolean(entry?.[1])),
+    );
+  }
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function resourceNamespace(resource: Record<string, unknown>): string | undefined {
+  return nonEmptyString(asRecord(resource.metadata).namespace);
+}
+
+function juicefsCsiWorkloadOrder(workload: Record<string, unknown>): number {
+  const kind = resourceKind(workload);
+  const name = resourceName(workload);
+  const index = AFSCP_STORAGE_CSI_WORKLOADS.findIndex((candidate) =>
+    candidate.kind === kind && candidate.name === name,
+  );
+  return index >= 0 ? index : AFSCP_STORAGE_CSI_WORKLOADS.length;
+}
+
+function isJuicefsCsiWorkload(workload: Record<string, unknown>): boolean {
+  const kind = resourceKind(workload);
+  const name = resourceName(workload);
+  return AFSCP_STORAGE_CSI_WORKLOADS.some((candidate) =>
+    candidate.kind === kind && candidate.name === name,
+  );
+}
+
+function workloadRef(workload: Record<string, unknown>): string {
+  const namespace = resourceNamespace(workload) ?? '<unknown-namespace>';
+  return `${resourceKind(workload)}/${namespace}/${resourceName(workload)}`;
+}
+
+function workloadPodTemplateContainers(workload: Record<string, unknown>): Record<string, unknown>[] {
+  const podSpec = asRecord(asRecord(asRecord(workload.spec).template).spec);
+  const containers = Array.isArray(podSpec.containers) ? podSpec.containers.map(asRecord) : [];
+  const initContainers = Array.isArray(podSpec.initContainers) ? podSpec.initContainers.map(asRecord) : [];
+  return [...containers, ...initContainers];
+}
+
+function resolveJuicefsCsiMountNamespaceEnv(
+  workload: Record<string, unknown>,
+): JuicefsCsiMountNamespaceResolution | undefined {
+  const workloadNamespace = resourceNamespace(workload);
+  const ref = workloadRef(workload);
+
+  for (const container of workloadPodTemplateContainers(workload)) {
+    const env = Array.isArray(container.env) ? container.env.map(asRecord) : [];
+    const mountNamespaceEnv = env.find((entry) => entry.name === AFSCP_STORAGE_CSI_MOUNT_NAMESPACE_ENV);
+    if (!mountNamespaceEnv) {
+      continue;
+    }
+
+    const containerName = nonEmptyString(container.name) ?? '<unnamed-container>';
+    const literalNamespace = nonEmptyString(mountNamespaceEnv.value);
+    if (literalNamespace) {
+      return {
+        namespace: literalNamespace,
+        source: 'env:value',
+        command: '',
+        diagnostic: `resolved JuiceFS CSI Mount Pod namespace ${literalNamespace} from live ${ref} container ${containerName} env ${AFSCP_STORAGE_CSI_MOUNT_NAMESPACE_ENV}`,
+      };
+    }
+
+    const fieldPath = nonEmptyString(asRecord(asRecord(mountNamespaceEnv.valueFrom).fieldRef).fieldPath);
+    if (fieldPath === 'metadata.namespace' && workloadNamespace) {
+      return {
+        namespace: workloadNamespace,
+        source: 'env:fieldRef:metadata.namespace',
+        command: '',
+        diagnostic: `resolved JuiceFS CSI Mount Pod namespace ${workloadNamespace} from live ${ref} container ${containerName} env ${AFSCP_STORAGE_CSI_MOUNT_NAMESPACE_ENV}=fieldRef:${fieldPath}`,
+      };
+    }
+  }
+
+  return undefined;
+}
+
+async function resolveJuicefsCsiMountNamespace(options: {
+  kubeconfigPath: string;
+  runner: ExistingClusterCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<JuicefsCsiMountNamespaceResolution> {
+  const args = [
+    ...kubeBaseArgs(options.kubeconfigPath),
+    'get',
+    'deployment,statefulset,daemonset',
+    '-A',
+    '-o',
+    'json',
+    '--ignore-not-found',
+  ];
+  const command = commandText(args);
+  const fallback = (diagnostic: string): JuicefsCsiMountNamespaceResolution => ({
+    namespace: AFSCP_STORAGE_CSI_BUNDLED_MOUNT_NAMESPACE,
+    source: 'bundled-default',
+    command,
+    diagnostic: `${diagnostic}; using bundled default JuiceFS CSI Mount Pod namespace ${AFSCP_STORAGE_CSI_BUNDLED_MOUNT_NAMESPACE}`,
+  });
+  const result = await options.runner('kubectl', args, {
+    cwd: REPO_ROOT,
+    env: {
+      ...options.env,
+      KUBECONFIG: options.kubeconfigPath,
+    },
+    timeoutMs: KUBECTL_TIMEOUT_MS,
+  });
+
+  if (result.exitCode !== 0) {
+    const diagnostic = redactDiagnostic(result.stderr || `kubectl exited ${result.exitCode}`, options.secretValues);
+    return fallback(`could not read live JuiceFS CSI workloads (${diagnostic})`);
+  }
+
+  let workloads: Record<string, unknown>[];
+  try {
+    workloads = listItems(parseJsonObject(result.stdout))
+      .filter(isJuicefsCsiWorkload)
+      .sort((left, right) => juicefsCsiWorkloadOrder(left) - juicefsCsiWorkloadOrder(right));
+  } catch (error: unknown) {
+    return fallback(`live JuiceFS CSI workload JSON did not parse: ${errorMessage(error)}`);
+  }
+
+  for (const workload of workloads) {
+    const resolved = resolveJuicefsCsiMountNamespaceEnv(workload);
+    if (resolved) {
+      return {
+        ...resolved,
+        command,
+      };
+    }
+  }
+
+  const workloadNamespace = workloads.map(resourceNamespace).find((namespace): namespace is string => Boolean(namespace));
+  if (workloadNamespace) {
+    const refs = workloads.map(workloadRef).join(', ');
+    return {
+      namespace: workloadNamespace,
+      source: 'workload-namespace',
+      command,
+      diagnostic: `live JuiceFS CSI workloads (${refs}) did not expose resolvable ${AFSCP_STORAGE_CSI_MOUNT_NAMESPACE_ENV}; using discovered workload namespace ${workloadNamespace}`,
+    };
+  }
+
+  return fallback('no live juicefs-csi-controller or juicefs-csi-node workload was discovered');
+}
+
+async function loadExistingClusterSecretJson(options: {
+  namespace: string;
+  secretName: string;
+  kubeconfigPath: string;
+  runner: ExistingClusterCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ secret?: Record<string, unknown>; command: string; diagnostic?: string; failure?: CheckFailure }> {
+  const args = [
+    ...kubeBaseArgs(options.kubeconfigPath),
+    '-n',
+    options.namespace,
+    'get',
+    'secret',
+    options.secretName,
+    '-o',
+    'json',
+  ];
+  const result = await options.runner('kubectl', args, {
+    cwd: REPO_ROOT,
+    env: {
+      ...options.env,
+      KUBECONFIG: options.kubeconfigPath,
+    },
+    timeoutMs: KUBECTL_TIMEOUT_MS,
+  });
+  const command = commandText(args);
+  if (result.exitCode !== 0) {
+    const diagnostic = redactDiagnostic(result.stderr || result.stdout || `kubectl exited ${result.exitCode}`, options.secretValues);
+    return {
+      command,
+      diagnostic,
+      failure: {
+        path: `preflight:Secret/${options.secretName}`,
+        message: preflightDiagnostic(`expected operator-provided Secret ${options.secretName} must be readable for JuiceFS CSI CA visibility checks. ${diagnostic}`, options.secretValues),
+      },
+    };
+  }
+
+  try {
+    return {
+      command,
+      secret: asRecord(JSON.parse(result.stdout) as unknown),
+    };
+  } catch (error: unknown) {
+    return {
+      command,
+      diagnostic: 'Secret JSON did not parse',
+      failure: {
+        path: `preflight:Secret/${options.secretName}`,
+        message: preflightDiagnostic(`expected operator-provided Secret ${options.secretName} JSON to parse for JuiceFS CSI CA visibility checks: ${errorMessage(error)}`, options.secretValues),
+      },
+    };
+  }
+}
+
+async function runAfscpVolumeSecretCaVisibilityPreflight(options: {
+  namespace: string;
+  volumeSecretName: string;
+  csiMountNamespace: JuicefsCsiMountNamespaceResolution;
+  kubeconfigPath: string;
+  runner: ExistingClusterCommandRunner;
+  env: Record<string, string | undefined>;
+  secretValues: readonly string[];
+}): Promise<{ checks: PreApplyPreflightCheckEvidence[]; failures: CheckFailure[] }> {
+  const checks: PreApplyPreflightCheckEvidence[] = [];
+  const failures: CheckFailure[] = [];
+  const volumeSecret = await loadExistingClusterSecretJson({
+    namespace: options.namespace,
+    secretName: options.volumeSecretName,
+    kubeconfigPath: options.kubeconfigPath,
+    runner: options.runner,
+    env: options.env,
+    secretValues: options.secretValues,
+  });
+
+  if (volumeSecret.failure || !volumeSecret.secret) {
+    checks.push({
+      name: `existing-secret:${options.volumeSecretName}:juicefs-ca-configs`,
+      status: 'failed',
+      command: volumeSecret.command,
+      diagnostic: volumeSecret.diagnostic,
+    });
+    failures.push(...(volumeSecret.failure ? [volumeSecret.failure] : []));
+    return { checks, failures };
+  }
+
+  const metaurl = decodeSecretDataValue(volumeSecret.secret, 'metaurl') ?? '';
+  const sslRootCertDir = sslRootCertDirFromMetaUrl(metaurl);
+  if (!sslRootCertDir) {
+    checks.push({
+      name: `existing-secret:${options.volumeSecretName}:juicefs-ca-configs`,
+      status: 'passed',
+      command: volumeSecret.command,
+      diagnostic: 'volume metaurl does not declare sslrootcert; JuiceFS CSI CA configs not required',
+    });
+    return { checks, failures };
+  }
+
+  const configs = parseJuicefsConfigs(decodeSecretDataValue(volumeSecret.secret, 'configs') ?? '');
+  const mountSecretName = Object.entries(configs).find(([, mountDir]) => mountDir === sslRootCertDir)?.[0];
+  if (!mountSecretName) {
+    const diagnostic = `volume Secret metaurl declares sslrootcert under ${sslRootCertDir}, but configs does not map a CSI mount namespace Secret to that directory`;
+    checks.push({
+      name: `existing-secret:${options.volumeSecretName}:juicefs-ca-configs`,
+      status: 'failed',
+      command: volumeSecret.command,
+      diagnostic,
+    });
+    addFailure(
+      failures,
+      `preflight:Secret/${options.volumeSecretName}:configs`,
+      preflightDiagnostic(diagnostic, options.secretValues),
+    );
+    return { checks, failures };
+  }
+
+  checks.push({
+    name: `existing-secret:${options.volumeSecretName}:juicefs-ca-configs`,
+    status: 'passed',
+    command: volumeSecret.command,
+  });
+  checks.push({
+    name: 'juicefs-csi-mount-namespace',
+    status: 'passed',
+    command: options.csiMountNamespace.command,
+    diagnostic: `source=${options.csiMountNamespace.source}; ${options.csiMountNamespace.diagnostic}`,
+  });
+
+  const args = [
+    ...kubeBaseArgs(options.kubeconfigPath),
+    '-n',
+    options.csiMountNamespace.namespace,
+    'get',
+    'secret',
+    mountSecretName,
+    '-o',
+    'go-template={{range $key, $_ := .data}}{{printf "%s\\n" $key}}{{end}}',
+  ];
+  const result = await options.runner('kubectl', args, {
+    cwd: REPO_ROOT,
+    env: {
+      ...options.env,
+      KUBECONFIG: options.kubeconfigPath,
+    },
+    timeoutMs: KUBECTL_TIMEOUT_MS,
+  });
+  const actualKeys = new Set(result.stdout.split(/\s+/u).filter(Boolean));
+  const passed = result.exitCode === 0 && actualKeys.has('ca.crt');
+  const diagnostic = passed
+    ? undefined
+    : redactDiagnostic(result.stderr || result.stdout || `kubectl exited ${result.exitCode}`, options.secretValues);
+
+  checks.push({
+    name: `existing-secret:${options.csiMountNamespace.namespace}/${mountSecretName}:juicefs-ca`,
+    status: passed ? 'passed' : 'failed',
+    command: commandText(args),
+    diagnostic,
+  });
+
+  if (!passed) {
+    addFailure(
+      failures,
+      `preflight:Secret/${options.csiMountNamespace.namespace}/${mountSecretName}`,
+      preflightDiagnostic(
+        `JuiceFS CSI Mount Pod namespace must contain CA Secret ${options.csiMountNamespace.namespace}/${mountSecretName} with ca.crt because ${options.volumeSecretName}/configs maps it to ${sslRootCertDir}; namespace source=${options.csiMountNamespace.source}; ${options.csiMountNamespace.diagnostic}`,
+        options.secretValues,
+      ),
+    );
+  }
+
+  return { checks, failures };
+}
+
 async function runExistingSecretPreApplyPreflight(options: {
   appYaml: string;
   namespace: string;
@@ -1635,6 +2037,8 @@ async function runExistingSecretPreApplyPreflight(options: {
 }): Promise<{ checks: PreApplyPreflightCheckEvidence[]; failures: CheckFailure[] }> {
   const checks: PreApplyPreflightCheckEvidence[] = [];
   const failures: CheckFailure[] = [];
+  const volumeSecretName = options.afscpVolumeRef ?? renderedAfscpVolumeRef(options.appYaml, options.namespace);
+  let volumeSecretKeyCheckPassed = false;
   const expectedSecrets = [
     {
       name: options.appRef ?? renderedAppRef(options.appYaml),
@@ -1645,7 +2049,7 @@ async function runExistingSecretPreApplyPreflight(options: {
       keys: AFSCP_RUNTIME_SECRET_KEYS,
     },
     {
-      name: options.afscpVolumeRef ?? renderedAfscpVolumeRef(options.appYaml, options.namespace),
+      name: volumeSecretName,
       keys: AFSCP_VOLUME_SECRET_KEYS,
     },
   ] as const;
@@ -1696,6 +2100,29 @@ async function runExistingSecretPreApplyPreflight(options: {
         preflightDiagnostic(`expected operator-provided Secret ${expected.name} is missing keys: ${missingKeys.join(', ')}`, options.secretValues),
       );
     }
+    if (expected.name === volumeSecretName) {
+      volumeSecretKeyCheckPassed = passed;
+    }
+  }
+
+  if (volumeSecretKeyCheckPassed) {
+    const csiMountNamespace = await resolveJuicefsCsiMountNamespace({
+      kubeconfigPath: options.kubeconfigPath,
+      runner: options.runner,
+      env: options.env,
+      secretValues: options.secretValues,
+    });
+    const volumeCaVisibility = await runAfscpVolumeSecretCaVisibilityPreflight({
+      namespace: options.namespace,
+      volumeSecretName,
+      csiMountNamespace,
+      kubeconfigPath: options.kubeconfigPath,
+      runner: options.runner,
+      env: options.env,
+      secretValues: options.secretValues,
+    });
+    checks.push(...volumeCaVisibility.checks);
+    failures.push(...volumeCaVisibility.failures);
   }
 
   return { checks, failures };
@@ -2781,7 +3208,7 @@ export async function runExistingClusterSmokeProducer(
     secretValues: renderedSecretValues,
     appRef: rendered.siteEnvValues.AGENTSMITH_APP_REF,
     afscpRuntimeRef: rendered.siteEnvValues.AFSCP_RUNTIME_REF,
-    afscpVolumeRef: rendered.siteEnvValues.AFSCP_VOLUME_REF,
+    afscpVolumeRef: renderedAfscpVolumeRef(rendered.appYaml, rendered.namespace),
   });
   const preApplyEvidence = {
     ...baseEvidence,

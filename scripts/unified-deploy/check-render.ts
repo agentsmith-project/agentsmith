@@ -22,6 +22,13 @@ import {
 import { checkAddressTruth } from './check-address-truth';
 import { renderUnifiedDeployFromFiles } from './render';
 import { writeProducerEvidence } from './evidence';
+import {
+  NODE_SUBSTRATE_CA_BUNDLE_DIR,
+  NODE_SUBSTRATE_CA_BUNDLE_PATH,
+  SUBSTRATE_CA_BASE_DIR,
+  SUBSTRATE_CA_PROJECTED_PATH,
+  isKubernetesSecretDataKey,
+} from './substrate-ca';
 
 const REQUIRED_COMPONENT_DEPLOYMENTS = new Map([
   ['web', 'agentsmith-web'],
@@ -115,6 +122,17 @@ const AFSCP_VOLUME_STORAGE_QUANTITY = '12P';
 const AFSCP_VOLUME_ROOT_PATH = '/data/afscp/volumes/default';
 const AFSCP_JVS_CWD_VOLUME = 'afscp-jvs-cwd';
 const AFSCP_JVS_CWD_PATH = '/data/afscp/jvs-cwd';
+const POD_TEMPLATE_OWNERSHIP_LABEL = 'app.kubernetes.io/part-of';
+const POD_TEMPLATE_OWNERSHIP_LABEL_VALUE = 'agentsmith-deploy';
+const POD_TEMPLATE_RENDERED_BY_ANNOTATION = 'rendered-by';
+const POD_TEMPLATE_RENDERED_BY_ANNOTATION_VALUE = 'agentsmith-unified-deploy';
+const AFSCP_POD_TEMPLATE_RESOURCES = [
+  ['Job', AFSCP_SCHEMA_BOOTSTRAP_JOB],
+  ['Job', AFSCP_VOLUME_BOOTSTRAP_JOB],
+  ['Deployment', 'afscp-api'],
+  ['Deployment', 'afscp-worker'],
+  ['Deployment', 'afscp-export-gateway'],
+] as const;
 const ROLLOUT_CHECKSUM_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 
 type PackageJsonLike = {
@@ -552,8 +570,8 @@ function checkAppConfig(documents: readonly Record<string, unknown>[], failures:
   if (typeof data.MINIO_PORT !== 'string' || !/^\d+$/u.test(data.MINIO_PORT)) {
     addFailure(failures, 'ConfigMap/agentsmith-app-config', 'MINIO_PORT must be rendered for Node API MinIO storage');
   }
-  if (data.MINIO_USE_SSL !== 'false') {
-    addFailure(failures, 'ConfigMap/agentsmith-app-config', 'MINIO_USE_SSL must be false for the Docker substrate MinIO binding');
+  if (data.MINIO_USE_SSL !== 'false' && data.MINIO_USE_SSL !== 'true') {
+    addFailure(failures, 'ConfigMap/agentsmith-app-config', 'MINIO_USE_SSL must be rendered as a boolean string for Node API MinIO storage');
   }
 
   for (const document of documents) {
@@ -718,6 +736,31 @@ function resourceByKindName(
   return documents.find((document) => resourceKind(document) === kind && resourceName(document) === name) ?? {};
 }
 
+function workloadPodTemplateMetadata(
+  documents: readonly Record<string, unknown>[],
+  kind: string,
+  name: string,
+): Record<string, unknown> {
+  const resource = resourceByKindName(documents, kind, name);
+  return asRecord(asRecord(asRecord(resource.spec).template).metadata);
+}
+
+function workloadPodTemplateLabels(
+  documents: readonly Record<string, unknown>[],
+  kind: string,
+  name: string,
+): Record<string, unknown> {
+  return asRecord(workloadPodTemplateMetadata(documents, kind, name).labels);
+}
+
+function workloadPodTemplateAnnotations(
+  documents: readonly Record<string, unknown>[],
+  kind: string,
+  name: string,
+): Record<string, unknown> {
+  return asRecord(workloadPodTemplateMetadata(documents, kind, name).annotations);
+}
+
 function firstString(values: readonly unknown[], fallback: string): string {
   return values.find((value): value is string => typeof value === 'string' && value.length > 0) ?? fallback;
 }
@@ -778,8 +821,7 @@ function deploymentPodTemplateAnnotations(
   documents: readonly Record<string, unknown>[],
   deploymentName: string,
 ): Record<string, unknown> {
-  const deployment = resourceByKindName(documents, 'Deployment', deploymentName);
-  return asRecord(asRecord(asRecord(asRecord(deployment.spec).template).metadata).annotations);
+  return workloadPodTemplateAnnotations(documents, 'Deployment', deploymentName);
 }
 
 function resourceStringsFromRules(resource: Record<string, unknown>): Set<string> {
@@ -1086,6 +1128,7 @@ function checkAfscpPersistentVolumeResources(
   const pvSpec = asRecord(pv.spec);
   const pvcSpec = asRecord(pvc.spec);
   const csi = asRecord(pvSpec.csi);
+  const claimRef = asRecord(pvSpec.claimRef);
   const nodePublishSecretRef = asRecord(csi.nodePublishSecretRef);
   const pvCapacity = asRecord(pvSpec.capacity);
   const pvcRequests = asRecord(asRecord(pvcSpec.resources).requests);
@@ -1114,6 +1157,13 @@ function checkAfscpPersistentVolumeResources(
   }
   if (pvcSpec.volumeName !== expectedPvName) {
     addFailure(failures, `PersistentVolumeClaim/${AFSCP_VOLUME_PVC}`, 'AFSCP default PVC must bind to the static JuiceFS PersistentVolume');
+  }
+  if (claimRef.namespace !== namespace || claimRef.name !== AFSCP_VOLUME_PVC) {
+    addFailure(
+      failures,
+      `PersistentVolume/${expectedPvName}:spec.claimRef`,
+      'AFSCP default PersistentVolume claimRef must point to the namespace-local default PersistentVolumeClaim',
+    );
   }
   if (pvCapacity.storage !== AFSCP_VOLUME_STORAGE_QUANTITY || pvcRequests.storage !== AFSCP_VOLUME_STORAGE_QUANTITY) {
     addFailure(
@@ -1491,6 +1541,277 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
   }
 }
 
+function jobPodSpec(
+  documents: readonly Record<string, unknown>[],
+  jobName: string,
+): Record<string, unknown> {
+  const job = resourceByKindName(documents, 'Job', jobName);
+  return asRecord(asRecord(asRecord(job.spec).template).spec);
+}
+
+function podSpecVolumes(podSpec: Record<string, unknown>): Record<string, unknown>[] {
+  return Array.isArray(podSpec.volumes) ? podSpec.volumes.map(asRecord) : [];
+}
+
+function containerVolumeMounts(container: Record<string, unknown>): Record<string, unknown>[] {
+  return Array.isArray(container.volumeMounts) ? container.volumeMounts.map(asRecord) : [];
+}
+
+function substrateCaVolumes(podSpec: Record<string, unknown>): Record<string, unknown>[] {
+  return podSpecVolumes(podSpec).filter((volume) =>
+    typeof volume.name === 'string' && /^substrate-[a-z0-9-]+-ca$/u.test(volume.name),
+  );
+}
+
+function hasVolume(podSpec: Record<string, unknown>, volumeName: string): boolean {
+  return podSpecVolumes(podSpec).some((volume) => volume.name === volumeName);
+}
+
+function hasMountedVolume(container: Record<string, unknown>, volumeName: string): boolean {
+  return containerVolumeMounts(container).some((mount) => mount.name === volumeName);
+}
+
+function checkSubstrateCaVolumes(
+  podSpec: Record<string, unknown>,
+  resourcePath: string,
+  failures: CheckFailure[],
+): void {
+  for (const volume of substrateCaVolumes(podSpec)) {
+    const secret = asRecord(volume.secret);
+    const items = Array.isArray(secret.items) ? secret.items.map(asRecord) : [];
+    if (typeof secret.secretName !== 'string' || !secret.secretName) {
+      addFailure(failures, resourcePath, `${String(volume.name)} must reference an existing substrate CA Secret`);
+    }
+    const caItem = items.find((item) => item.path === SUBSTRATE_CA_PROJECTED_PATH);
+    const secretKey = typeof caItem?.key === 'string' ? caItem.key : '';
+    if (!caItem || !isKubernetesSecretDataKey(secretKey)) {
+      addFailure(
+        failures,
+        resourcePath,
+        `${String(volume.name)} must project a valid Kubernetes Secret data key to ${SUBSTRATE_CA_PROJECTED_PATH}`,
+      );
+    }
+  }
+}
+
+function checkContainerMountsSubstrateCaVolumes(
+  container: Record<string, unknown>,
+  caVolumes: readonly Record<string, unknown>[],
+  resourcePath: string,
+  containerLabel: string,
+  failures: CheckFailure[],
+): void {
+  const mounts = containerVolumeMounts(container);
+  for (const volume of caVolumes) {
+    const volumeName = typeof volume.name === 'string' ? volume.name : '';
+    const mount = mounts.find((item) => item.name === volumeName);
+    if (
+      !mount
+      || typeof mount.mountPath !== 'string'
+      || !mount.mountPath.startsWith(`${SUBSTRATE_CA_BASE_DIR}/`)
+      || mount.readOnly !== true
+    ) {
+      addFailure(
+        failures,
+        resourcePath,
+        `${containerLabel} must mount ${volumeName} read-only under ${SUBSTRATE_CA_BASE_DIR}`,
+      );
+    }
+  }
+}
+
+function checkNodeSubstrateCaProjection(
+  podSpec: Record<string, unknown>,
+  resourcePath: string,
+  containerName: string,
+  failures: CheckFailure[],
+): void {
+  const caVolumes = substrateCaVolumes(podSpec);
+  if (caVolumes.length === 0) {
+    addFailure(failures, resourcePath, `${resourcePath} substrate client must project substrate CA Secret volumes`);
+    return;
+  }
+  checkSubstrateCaVolumes(podSpec, resourcePath, failures);
+  const container = podSpecContainer(podSpec, 'containers', containerName);
+  const init = podSpecContainer(podSpec, 'initContainers', 'substrate-ca-bundle');
+  if (!hasVolume(podSpec, 'substrate-ca-bundle')) {
+    addFailure(failures, resourcePath, `${resourcePath} must define substrate-ca-bundle emptyDir`);
+  }
+  if (containerEnvValue(container, 'NODE_EXTRA_CA_CERTS') !== NODE_SUBSTRATE_CA_BUNDLE_PATH) {
+    addFailure(failures, resourcePath, `${containerName} must set NODE_EXTRA_CA_CERTS to the rendered substrate CA bundle`);
+  }
+  if (stringArray(init.command).join('\0') !== 'node' || !stringArray(init.args).includes('-e')) {
+    addFailure(failures, resourcePath, `${resourcePath} must build NODE_EXTRA_CA_CERTS with a node initContainer`);
+  }
+  for (const checkedContainer of [
+    { value: container, label: containerName },
+    { value: init, label: 'substrate-ca-bundle initContainer' },
+  ]) {
+    if (!hasMountedVolume(checkedContainer.value, 'substrate-ca-bundle')) {
+      addFailure(failures, resourcePath, `${checkedContainer.label} must mount ${NODE_SUBSTRATE_CA_BUNDLE_DIR}`);
+    }
+    checkContainerMountsSubstrateCaVolumes(
+      checkedContainer.value,
+      caVolumes,
+      resourcePath,
+      checkedContainer.label,
+      failures,
+    );
+  }
+}
+
+function checkAfscpSubstrateCaProjectionForContainer(
+  podSpec: Record<string, unknown>,
+  resourcePath: string,
+  containerListName: 'containers' | 'initContainers',
+  containerName: string,
+  failures: CheckFailure[],
+): void {
+  const caVolumes = substrateCaVolumes(podSpec);
+  if (caVolumes.length === 0) {
+    return;
+  }
+  const container = podSpecContainer(podSpec, containerListName, containerName);
+  const sslCertDir = containerEnvValue(container, 'SSL_CERT_DIR') ?? '';
+  if (!sslCertDir.includes(SUBSTRATE_CA_BASE_DIR)) {
+    addFailure(failures, resourcePath, `${containerName} must set SSL_CERT_DIR for substrate CA trust`);
+  }
+  checkContainerMountsSubstrateCaVolumes(container, caVolumes, resourcePath, containerName, failures);
+}
+
+function checkAfscpSubstrateCaProjection(
+  podSpec: Record<string, unknown>,
+  resourcePath: string,
+  containers: readonly { list: 'containers' | 'initContainers'; name: string }[],
+  failures: CheckFailure[],
+): void {
+  if (substrateCaVolumes(podSpec).length === 0) {
+    addFailure(failures, resourcePath, `${resourcePath} substrate client must project substrate CA Secret volumes`);
+    return;
+  }
+  checkSubstrateCaVolumes(podSpec, resourcePath, failures);
+  for (const container of containers) {
+    checkAfscpSubstrateCaProjectionForContainer(
+      podSpec,
+      resourcePath,
+      container.list,
+      container.name,
+      failures,
+    );
+  }
+}
+
+function checkSubstrateCaProjection(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
+  const appConfig = asRecord(resourceByKindName(documents, 'ConfigMap', AGENTSMITH_APP_CONFIG_MAP).data);
+  const podSpecs = [
+    jobPodSpec(documents, PRODUCT_SCHEMA_BOOTSTRAP_JOB),
+    deploymentPodSpec(documents, 'agentsmith-web'),
+    deploymentPodSpec(documents, 'agentsmith-api'),
+    jobPodSpec(documents, AFSCP_SCHEMA_BOOTSTRAP_JOB),
+    jobPodSpec(documents, AFSCP_VOLUME_BOOTSTRAP_JOB),
+    deploymentPodSpec(documents, 'afscp-api'),
+    deploymentPodSpec(documents, 'afscp-worker'),
+    deploymentPodSpec(documents, 'afscp-export-gateway'),
+  ];
+  const caProjectionEnabled = podSpecs.some((podSpec) => substrateCaVolumes(podSpec).length > 0);
+  const objectStorageCaProjected = podSpecs.some((podSpec) =>
+    hasVolume(podSpec, 'substrate-object-storage-ca'),
+  );
+
+  if (appConfig.MINIO_USE_SSL === 'true' && !objectStorageCaProjected) {
+    addFailure(
+      failures,
+      `ConfigMap/${AGENTSMITH_APP_CONFIG_MAP}`,
+      'MINIO_USE_SSL=true requires object-storage CA projection into substrate clients',
+    );
+  }
+  if (objectStorageCaProjected && appConfig.MINIO_USE_SSL !== 'true') {
+    addFailure(
+      failures,
+      `ConfigMap/${AGENTSMITH_APP_CONFIG_MAP}`,
+      'object-storage CA projection requires MINIO_USE_SSL=true',
+    );
+  }
+  if (!caProjectionEnabled) {
+    return;
+  }
+
+  checkNodeSubstrateCaProjection(
+    jobPodSpec(documents, PRODUCT_SCHEMA_BOOTSTRAP_JOB),
+    `Job/${PRODUCT_SCHEMA_BOOTSTRAP_JOB}`,
+    PRODUCT_SCHEMA_BOOTSTRAP_JOB,
+    failures,
+  );
+  checkNodeSubstrateCaProjection(
+    deploymentPodSpec(documents, 'agentsmith-web'),
+    'Deployment/agentsmith-web',
+    'web',
+    failures,
+  );
+  checkNodeSubstrateCaProjection(
+    deploymentPodSpec(documents, 'agentsmith-api'),
+    'Deployment/agentsmith-api',
+    'api',
+    failures,
+  );
+  checkAfscpSubstrateCaProjection(
+    jobPodSpec(documents, AFSCP_SCHEMA_BOOTSTRAP_JOB),
+    `Job/${AFSCP_SCHEMA_BOOTSTRAP_JOB}`,
+    [{ list: 'containers', name: AFSCP_SCHEMA_BOOTSTRAP_JOB }],
+    failures,
+  );
+  checkAfscpSubstrateCaProjection(
+    jobPodSpec(documents, AFSCP_VOLUME_BOOTSTRAP_JOB),
+    `Job/${AFSCP_VOLUME_BOOTSTRAP_JOB}`,
+    [
+      { list: 'initContainers', name: AFSCP_SCHEMA_BOOTSTRAP_JOB },
+      { list: 'containers', name: AFSCP_VOLUME_BOOTSTRAP_JOB },
+    ],
+    failures,
+  );
+  for (const [deploymentName, containerName] of [
+    ['afscp-api', 'afscp-api'],
+    ['afscp-worker', 'afscp-worker'],
+    ['afscp-export-gateway', 'afscp-export-gateway'],
+  ] as const) {
+    checkAfscpSubstrateCaProjection(
+      deploymentPodSpec(documents, deploymentName),
+      `Deployment/${deploymentName}`,
+      [
+        { list: 'initContainers', name: AFSCP_SCHEMA_CHECK_INIT_CONTAINER },
+        { list: 'containers', name: containerName },
+      ],
+      failures,
+    );
+  }
+}
+
+function checkAfscpPodTemplateOwnershipMarkers(
+  documents: readonly Record<string, unknown>[],
+  failures: CheckFailure[],
+): void {
+  for (const [kind, name] of AFSCP_POD_TEMPLATE_RESOURCES) {
+    const resourcePath = `${kind}/${name}`;
+    const labels = workloadPodTemplateLabels(documents, kind, name);
+    const annotations = workloadPodTemplateAnnotations(documents, kind, name);
+
+    if (labels[POD_TEMPLATE_OWNERSHIP_LABEL] !== POD_TEMPLATE_OWNERSHIP_LABEL_VALUE) {
+      addFailure(
+        failures,
+        resourcePath,
+        `${resourcePath} pod template must include ${POD_TEMPLATE_OWNERSHIP_LABEL}=${POD_TEMPLATE_OWNERSHIP_LABEL_VALUE}`,
+      );
+    }
+    if (annotations[POD_TEMPLATE_RENDERED_BY_ANNOTATION] !== POD_TEMPLATE_RENDERED_BY_ANNOTATION_VALUE) {
+      addFailure(
+        failures,
+        resourcePath,
+        `${resourcePath} pod template must include ${POD_TEMPLATE_RENDERED_BY_ANNOTATION}=${POD_TEMPLATE_RENDERED_BY_ANNOTATION_VALUE}`,
+      );
+    }
+  }
+}
+
 function checkRolloutChecksumAnnotations(documents: readonly Record<string, unknown>[], failures: CheckFailure[]): void {
   for (const [deploymentName, checksumKeys] of [
     ['agentsmith-web', ['agentsmith.mbos.dev/checksum-app-config', 'agentsmith.mbos.dev/checksum-app-secrets']],
@@ -1723,6 +2044,8 @@ export function checkRenderedOutput(
     checkRunnableAppWorkloads(parsed.documents, failures);
     checkLlmupContract(parsed.documents, failures);
     checkAfscpContract(parsed.documents, failures);
+    checkAfscpPodTemplateOwnershipMarkers(parsed.documents, failures);
+    checkSubstrateCaProjection(parsed.documents, failures);
     checkRolloutChecksumAnnotations(parsed.documents, failures);
     checkAsbcpContract(parsed.documents, failures, options);
   }

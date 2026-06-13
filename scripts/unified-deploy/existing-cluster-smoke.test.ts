@@ -81,11 +81,85 @@ function writeExistingClusterSiteEnv(root: string, asbcpImage: string = ASBCP_SO
   return siteEnvPath;
 }
 
+function writeStrictTlsSubstrateTruth(root: string): string {
+  const truthPath = join(root, 'strict-tls-substrate.env');
+  writeFileSync(
+    truthPath,
+    `${readFileSync(join(fixturesDir, 'substrate-truth.sentinel.env'), 'utf8')}
+SUBSTRATE_POSTGRES_TLS_MODE=verify-full
+SUBSTRATE_POSTGRES_CA_SECRET_REF=secretRef:agentsmith/postgresql-ca
+`.replace(
+      /^SUBSTRATE_KEYCLOAK_INTERNAL_BASE_URL=.*$/mu,
+      'SUBSTRATE_KEYCLOAK_INTERNAL_BASE_URL=http://substrate-keycloak:8080',
+    ),
+    'utf8',
+  );
+  return truthPath;
+}
+
 function jsonResult(value: unknown): { exitCode: number; stdout: string; stderr: string } {
   return {
     exitCode: 0,
     stdout: JSON.stringify(value),
     stderr: '',
+  };
+}
+
+function strictTlsAfscpVolumeSecret(configs?: Record<string, string>): Record<string, unknown> {
+  return {
+    kind: 'Secret',
+    metadata: { name: 'afscp-default-volume-juicefs', namespace: 'agentsmith' },
+    type: 'Opaque',
+    data: {
+      name: Buffer.from('agentsmith-afscp-default').toString('base64'),
+      metaurl: Buffer.from('postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql.agentsmith.svc.cluster.local:5432/sentinel_pg_db?sslmode=verify-full&sslrootcert=/etc/agentsmith/substrate-ca/postgresql/ca.crt').toString('base64'),
+      storage: Buffer.from('minio').toString('base64'),
+      bucket: Buffer.from('http://substrate-minio.agentsmith.svc.cluster.local:9000/sentinel-files').toString('base64'),
+      'access-key': Buffer.from('sentinel_minio_access').toString('base64'),
+      'secret-key': Buffer.from('sentinel_minio_secret').toString('base64'),
+      ...(configs ? { configs: Buffer.from(JSON.stringify(configs)).toString('base64') } : {}),
+    },
+  };
+}
+
+function juicefsCsiWorkloadList(options: {
+  workloadNamespace: string;
+  mountNamespaceEnv?: string;
+  mountNamespaceFieldRef?: boolean;
+}): Record<string, unknown> {
+  const mountNamespaceEnv: Record<string, unknown>[] = [];
+  if (options.mountNamespaceEnv) {
+    mountNamespaceEnv.push({ name: 'JUICEFS_MOUNT_NAMESPACE', value: options.mountNamespaceEnv });
+  } else if (options.mountNamespaceFieldRef) {
+    mountNamespaceEnv.push({ name: 'JUICEFS_MOUNT_NAMESPACE', valueFrom: { fieldRef: { fieldPath: 'metadata.namespace' } } });
+  }
+  const workloadSpec = {
+    template: {
+      spec: {
+        containers: [
+          {
+            name: 'juicefs-plugin',
+            env: mountNamespaceEnv,
+          },
+        ],
+      },
+    },
+  };
+
+  return {
+    kind: 'List',
+    items: [
+      {
+        kind: 'StatefulSet',
+        metadata: { name: 'juicefs-csi-controller', namespace: options.workloadNamespace },
+        spec: workloadSpec,
+      },
+      {
+        kind: 'DaemonSet',
+        metadata: { name: 'juicefs-csi-node', namespace: options.workloadNamespace },
+        spec: workloadSpec,
+      },
+    ],
   };
 }
 
@@ -188,11 +262,29 @@ function createPassingRunner(calls: CommandCall[]): ExistingClusterCommandRunner
       };
     }
     if (joined.includes('get secret afscp-default-volume-juicefs') || joined.includes('get secret custom-afscp-volume-juicefs')) {
+      if (joined.includes('-o json')) {
+        return jsonResult({
+          kind: 'Secret',
+          metadata: { name: joined.includes('custom-afscp-volume-juicefs') ? 'custom-afscp-volume-juicefs' : 'afscp-default-volume-juicefs' },
+          type: 'Opaque',
+          data: {
+            name: Buffer.from('agentsmith-afscp-default').toString('base64'),
+            metaurl: Buffer.from('postgres://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql.agentsmith.svc.cluster.local:5432/sentinel_pg_db?sslmode=disable').toString('base64'),
+            storage: Buffer.from('minio').toString('base64'),
+            bucket: Buffer.from('http://substrate-minio.agentsmith.svc.cluster.local:9000/sentinel-files').toString('base64'),
+            'access-key': Buffer.from('sentinel_minio_access').toString('base64'),
+            'secret-key': Buffer.from('sentinel_minio_secret').toString('base64'),
+          },
+        });
+      }
       return {
         exitCode: 0,
         stdout: ['name', 'metaurl', 'storage', 'bucket', 'access-key', 'secret-key'].join('\n'),
         stderr: '',
       };
+    }
+    if (joined.includes('get deployment,statefulset,daemonset -A -o json')) {
+      return jsonResult({ kind: 'List', items: [] });
     }
     if (joined.includes('auth can-i')) {
       return { exitCode: 0, stdout: 'yes\n', stderr: '' };
@@ -314,47 +406,50 @@ async function runSmoke(
 }
 
 describe('unified deploy existing-cluster smoke producer', () => {
-  it('fails ASBCP pre-apply RBAC preflight before apply and redacts operator diagnostics', async () => {
-    const root = tempDir('existing-cluster-preflight-rbac-');
-    const evidenceDir = tempDir('existing-cluster-evidence-');
-    const kubeconfigPath = writeKubeconfig(root);
-    const siteEnvPath = writeExistingClusterSiteEnv(root);
-    const calls: CommandCall[] = [];
-    const runner: ExistingClusterCommandRunner = async (command, args, options = {}) => {
-      calls.push({ command, args, input: options.input ?? '' });
-      if (args.join(' ').includes('auth can-i get persistentvolumes')) {
-        return {
-          exitCode: 1,
-          stdout: 'no\n',
-          stderr: 'Forbidden: sentinel_pg_secret sentinel_minio_secret cannot get persistentvolumes',
-        };
-      }
-      return createPassingRunner([])(command, args, options);
-    };
+  it.each(['create', 'update'] as const)(
+    'fails ASBCP pre-apply RBAC preflight before apply when persistentvolumes %s is missing and redacts operator diagnostics',
+    async (verb) => {
+      const root = tempDir(`existing-cluster-preflight-rbac-${verb}-`);
+      const evidenceDir = tempDir('existing-cluster-evidence-');
+      const kubeconfigPath = writeKubeconfig(root);
+      const siteEnvPath = writeExistingClusterSiteEnv(root);
+      const calls: CommandCall[] = [];
+      const runner: ExistingClusterCommandRunner = async (command, args, options = {}) => {
+        calls.push({ command, args, input: options.input ?? '' });
+        if (args.join(' ').includes(`auth can-i ${verb} persistentvolumes`)) {
+          return {
+            exitCode: 1,
+            stdout: 'no\n',
+            stderr: `Forbidden: sentinel_pg_secret sentinel_minio_secret cannot ${verb} persistentvolumes`,
+          };
+        }
+        return createPassingRunner([])(command, args, options);
+      };
 
-    const result = await runSmoke({
-      siteEnvPath,
-      evidenceDir,
-      env: { KUBECONFIG: kubeconfigPath },
-      homeDir: root,
-      runner,
-      probeRunner: passingProbeRunner,
-    });
-    const report = readFileSync(result.evidence.paths.report_path, 'utf8');
+      const result = await runSmoke({
+        siteEnvPath,
+        evidenceDir,
+        env: { KUBECONFIG: kubeconfigPath },
+        homeDir: root,
+        runner,
+        probeRunner: passingProbeRunner,
+      });
+      const report = readFileSync(result.evidence.paths.report_path, 'utf8');
 
-    expect(result.status).toBe('failed');
-    expect(calls.some((call) => call.args.includes('apply'))).toBe(false);
-    expect(result.failures).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        path: 'preflight:rbac:asbcp:persistentvolumes:get',
-        message: expect.stringContaining('operator preflight'),
-      }),
-    ]));
-    expect(result.evidence.pre_apply_preflight.status).toBe('failed');
-    expect(report).toContain('[REDACTED]');
-    expect(report).not.toContain('sentinel_pg_secret');
-    expect(report).not.toContain('sentinel_minio_secret');
-  });
+      expect(result.status).toBe('failed');
+      expect(calls.some((call) => call.args.includes('apply'))).toBe(false);
+      expect(result.failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          path: `preflight:rbac:asbcp:persistentvolumes:${verb}`,
+          message: expect.stringContaining('operator preflight'),
+        }),
+      ]));
+      expect(result.evidence.pre_apply_preflight.status).toBe('failed');
+      expect(report).toContain('[REDACTED]');
+      expect(report).not.toContain('sentinel_pg_secret');
+      expect(report).not.toContain('sentinel_minio_secret');
+    },
+  );
 
   it('checks ASBCP Secret projection, AFSCP caller role, and public ingress before apply', async () => {
     const root = tempDir('existing-cluster-preflight-static-');
@@ -503,6 +598,178 @@ describe('unified deploy existing-cluster smoke producer', () => {
     expect(calls.some((call) => call.args.join(' ').includes('get secret custom-afscp-runtime-secrets'))).toBe(true);
     expect(calls.some((call) => call.args.join(' ').includes('get secret custom-afscp-volume-juicefs'))).toBe(true);
     expect(result.evidence.llmup_config_health.admin_token_secret).toBe('custom-app-secrets/MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN');
+  });
+
+  it('passes preflight when strict TLS JuiceFS volume credentials expose the Postgres CA in the live CSI Mount Pod namespace', async () => {
+    const root = tempDir('existing-cluster-juicefs-ca-visible-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeExistingClusterSiteEnv(root);
+    const rendered = await renderUnifiedDeployFromFiles({
+      profile: 'existing-cluster',
+      siteEnvPath,
+      substrateTruthPath: writeStrictTlsSubstrateTruth(root),
+    });
+    const calls: CommandCall[] = [];
+    const passing = createPassingRunner(calls);
+    const runner: ExistingClusterCommandRunner = async (command, args, options = {}) => {
+      const joined = args.join(' ');
+      if (joined.includes('get secret afscp-default-volume-juicefs') && joined.includes('-o json')) {
+        calls.push({ command, args, input: options.input ?? '' });
+        return jsonResult(strictTlsAfscpVolumeSecret({
+          'postgresql-ca': '/etc/agentsmith/substrate-ca/postgresql',
+        }));
+      }
+      if (joined.includes('get deployment,statefulset,daemonset -A -o json')) {
+        calls.push({ command, args, input: options.input ?? '' });
+        return jsonResult(juicefsCsiWorkloadList({
+          workloadNamespace: 'storage-operators',
+          mountNamespaceEnv: 'juicefs-mounts',
+        }));
+      }
+      if (joined.includes('-n juicefs-mounts get secret postgresql-ca')) {
+        calls.push({ command, args, input: options.input ?? '' });
+        return { exitCode: 0, stdout: 'ca.crt\n', stderr: '' };
+      }
+      return passing(command, args, options);
+    };
+
+    const result = await runExistingClusterPreApplyPreflight({
+      appYaml: rendered.output,
+      namespace: 'agentsmith',
+      kubeconfigPath,
+      runner,
+      env: {},
+      secretValues: [],
+    });
+
+    expect(result.failures).toEqual([]);
+    expect(result.evidence.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'existing-secret:afscp-default-volume-juicefs:juicefs-ca-configs',
+        status: 'passed',
+      }),
+      expect.objectContaining({
+        name: 'juicefs-csi-mount-namespace',
+        status: 'passed',
+        diagnostic: expect.stringContaining('JUICEFS_MOUNT_NAMESPACE'),
+      }),
+      expect.objectContaining({
+        name: 'existing-secret:juicefs-mounts/postgresql-ca:juicefs-ca',
+        status: 'passed',
+      }),
+    ]));
+    expect(calls.some((call) => call.args.join(' ').includes('-n kube-system get secret postgresql-ca'))).toBe(false);
+  });
+
+  it('fails preflight when strict TLS JuiceFS configs do not map sslrootcert to a CSI Mount Pod namespace Secret', async () => {
+    const root = tempDir('existing-cluster-juicefs-ca-configs-missing-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeExistingClusterSiteEnv(root);
+    const rendered = await renderUnifiedDeployFromFiles({
+      profile: 'existing-cluster',
+      siteEnvPath,
+      substrateTruthPath: writeStrictTlsSubstrateTruth(root),
+    });
+    const calls: CommandCall[] = [];
+    const passing = createPassingRunner(calls);
+    const runner: ExistingClusterCommandRunner = async (command, args, options = {}) => {
+      const joined = args.join(' ');
+      if (joined.includes('get secret afscp-default-volume-juicefs') && joined.includes('-o json')) {
+        calls.push({ command, args, input: options.input ?? '' });
+        return jsonResult(strictTlsAfscpVolumeSecret());
+      }
+      if (joined.includes('get deployment,statefulset,daemonset -A -o json')) {
+        calls.push({ command, args, input: options.input ?? '' });
+        return jsonResult(juicefsCsiWorkloadList({
+          workloadNamespace: 'storage-operators',
+          mountNamespaceEnv: 'juicefs-mounts',
+        }));
+      }
+      return passing(command, args, options);
+    };
+
+    const result = await runExistingClusterPreApplyPreflight({
+      appYaml: rendered.output,
+      namespace: 'agentsmith',
+      kubeconfigPath,
+      runner,
+      env: {},
+      secretValues: [],
+    });
+
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'preflight:Secret/afscp-default-volume-juicefs:configs',
+        message: expect.stringContaining('configs does not map a CSI mount namespace Secret'),
+      }),
+    ]));
+    expect(result.evidence.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'existing-secret:afscp-default-volume-juicefs:juicefs-ca-configs',
+        status: 'failed',
+      }),
+    ]));
+    expect(calls.some((call) => call.args.join(' ').includes('get secret postgresql-ca'))).toBe(false);
+  });
+
+  it('fails preflight when strict TLS JuiceFS configs reference a CA Secret missing from the CSI Mount Pod namespace', async () => {
+    const root = tempDir('existing-cluster-juicefs-ca-missing-');
+    const kubeconfigPath = writeKubeconfig(root);
+    const siteEnvPath = writeExistingClusterSiteEnv(root);
+    const rendered = await renderUnifiedDeployFromFiles({
+      profile: 'existing-cluster',
+      siteEnvPath,
+      substrateTruthPath: writeStrictTlsSubstrateTruth(root),
+    });
+    const calls: CommandCall[] = [];
+    const passing = createPassingRunner(calls);
+    const runner: ExistingClusterCommandRunner = async (command, args, options = {}) => {
+      const joined = args.join(' ');
+      if (joined.includes('get secret afscp-default-volume-juicefs') && joined.includes('-o json')) {
+        calls.push({ command, args, input: options.input ?? '' });
+        return jsonResult(strictTlsAfscpVolumeSecret({
+          'postgresql-ca': '/etc/agentsmith/substrate-ca/postgresql',
+        }));
+      }
+      if (joined.includes('get deployment,statefulset,daemonset -A -o json')) {
+        calls.push({ command, args, input: options.input ?? '' });
+        return jsonResult(juicefsCsiWorkloadList({
+          workloadNamespace: 'csi-system',
+        }));
+      }
+      if (joined.includes('-n csi-system get secret postgresql-ca')) {
+        calls.push({ command, args, input: options.input ?? '' });
+        return { exitCode: 1, stdout: '', stderr: 'Error from server (NotFound): secrets "postgresql-ca" not found' };
+      }
+      return passing(command, args, options);
+    };
+
+    const result = await runExistingClusterPreApplyPreflight({
+      appYaml: rendered.output,
+      namespace: 'agentsmith',
+      kubeconfigPath,
+      runner,
+      env: {},
+      secretValues: [],
+    });
+
+    expect(result.failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'preflight:Secret/csi-system/postgresql-ca',
+        message: expect.stringContaining('JuiceFS CSI Mount Pod namespace must contain CA Secret csi-system/postgresql-ca with ca.crt'),
+      }),
+    ]));
+    expect(result.evidence.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'juicefs-csi-mount-namespace',
+        status: 'passed',
+        diagnostic: expect.stringContaining('using discovered workload namespace csi-system'),
+      }),
+      expect.objectContaining({
+        name: 'existing-secret:csi-system/postgresql-ca:juicefs-ca',
+        status: 'failed',
+      }),
+    ]));
   });
 
   it('does not live-check namespace RBAC that the app manifest creates for a fresh namespace', async () => {

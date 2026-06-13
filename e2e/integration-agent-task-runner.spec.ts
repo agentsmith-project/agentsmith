@@ -12,6 +12,7 @@ import {
   createProjectInWorkspace,
   createTerminalSessionViaApi,
   deleteTerminalSessionViaApi,
+  deleteInternalWorkloadViaAsbcp,
   expectAgentTaskRunnerEvidenceViaApi,
   expectManagedAgentRunnerImageEvidenceViaApi,
   expectManagedWorkloadPodImage,
@@ -21,8 +22,10 @@ import {
   putContextEntryViaApi,
   readAgentTaskViaApi,
   runTerminalCommandInSession,
+  sanitizeWorkloadId,
   startAgentTaskRunViaApi,
   waitForRunnerOutputToken,
+  waitForWorkloadPodDeleted,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 
@@ -133,6 +136,47 @@ function readRunnerLockedRuntimeSmokeImage(): string | null {
     throw new Error(`runner_locked_runtime_smoke_non_canonical_image:${image}`);
   }
   return image;
+}
+
+async function cleanupManagedAgentTaskWorkload(args: {
+  projectId: string;
+  taskId: string | null;
+}): Promise<void> {
+  if (!args.taskId) return;
+  const workloadId = sanitizeWorkloadId(args.taskId);
+  await deleteInternalWorkloadViaAsbcp({
+    workspaceId: WORKSPACE_ID,
+    projectId: args.projectId,
+    workloadId,
+  });
+  await waitForWorkloadPodDeleted({
+    namespace: INTERNAL_AGENT_K8S_NAMESPACE,
+    workspaceId: WORKSPACE_ID,
+    projectId: args.projectId,
+    workloadId,
+    timeoutMs: 120_000,
+  });
+}
+
+async function cleanupManagedTerminalSessionWorkload(args: {
+  page: Page;
+  projectId: string;
+  taskId: string;
+  terminalSessionId: string | null;
+}): Promise<void> {
+  if (args.terminalSessionId) {
+    await deleteTerminalSessionViaApi({
+      page: args.page,
+      workspaceId: WORKSPACE_ID,
+      projectId: args.projectId,
+      taskId: args.taskId,
+      sessionId: args.terminalSessionId,
+    });
+  }
+  await cleanupManagedAgentTaskWorkload({
+    projectId: args.projectId,
+    taskId: args.taskId,
+  });
 }
 
 async function createRunnerlessAgentTask(args: {
@@ -315,46 +359,53 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       title: `Agent Task Context ${Date.now()}`,
     });
 
-    const taskNote = `TASK_CTX_${Date.now()}`;
-    await putContextEntryViaApi({
-      page,
-      scope: 'task',
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      key: 'notes.current_task',
-      content: taskNote,
-    });
+    try {
+      const taskNote = `TASK_CTX_${Date.now()}`;
+      await putContextEntryViaApi({
+        page,
+        scope: 'task',
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        key: 'notes.current_task',
+        content: taskNote,
+      });
 
-    const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      intent: [
-        'Run this exact shell command and use its stdout value in your final reply:',
-        '`python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope task --key notes.current_task`',
-        'Reply with exactly one line in this format and no extra text:',
-        '`CTX_TASK::<note>`',
-      ].join(' '),
-    });
+      const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        intent: [
+          'Run this exact shell command and use its stdout value in your final reply:',
+          '`python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope task --key notes.current_task`',
+          'Reply with exactly one line in this format and no extra text:',
+          '`CTX_TASK::<note>`',
+        ].join(' '),
+      });
 
-    await expectAgentTaskRunnerEvidenceViaApi({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      runnerId: prepared.runnerId,
-    });
-    await waitForRunnerOutputToken({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      token: taskNote,
-      runnerOutputActivityId,
-      runId,
-    });
+      await expectAgentTaskRunnerEvidenceViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        runnerId: prepared.runnerId,
+      });
+      await waitForRunnerOutputToken({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        token: taskNote,
+        runnerOutputActivityId,
+        runId,
+      });
+    } finally {
+      await cleanupManagedAgentTaskWorkload({
+        projectId: prepared.projectId,
+        taskId,
+      });
+    }
   });
 
   test('writes task context through mbos-context and persists it for the task owner', async ({ page }) => {
@@ -368,54 +419,61 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       projectId: prepared.projectId,
       title: `Agent Task Context Write ${Date.now()}`,
     });
-    const contextKey = `notes.task_roundtrip_${Date.now()}`;
-    const contextValue = `CTX_TASK_VALUE_${Date.now()}`;
+    try {
+      const contextKey = `notes.task_roundtrip_${Date.now()}`;
+      const contextValue = `CTX_TASK_VALUE_${Date.now()}`;
 
-    const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      intent: [
-        'Run these exact shell commands and use their stdout values in your final reply:',
-        `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py put --scope task --key ${contextKey} --content ${contextValue}`,
-        `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope task --key ${contextKey}`,
-        'Reply with exactly one line in this format and no extra text:',
-        '`CTX_TASK_WRITE::<value>`',
-      ].join(' '),
-    });
+      const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        intent: [
+          'Run these exact shell commands and use their stdout values in your final reply:',
+          `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py put --scope task --key ${contextKey} --content ${contextValue}`,
+          `python3 ~/.agents/skills/mbos-context/scripts/context_cli.py get --scope task --key ${contextKey}`,
+          'Reply with exactly one line in this format and no extra text:',
+          '`CTX_TASK_WRITE::<value>`',
+        ].join(' '),
+      });
 
-    await expectAgentTaskRunnerEvidenceViaApi({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      runnerId: prepared.runnerId,
-    });
-    await waitForRunnerOutputToken({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      token: contextValue,
-      runnerOutputActivityId,
-      runId,
-    });
+      await expectAgentTaskRunnerEvidenceViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        runnerId: prepared.runnerId,
+      });
+      await waitForRunnerOutputToken({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        token: contextValue,
+        runnerOutputActivityId,
+        runId,
+      });
 
-    const persisted = await getContextEntryViaApi({
-      page,
-      scope: 'task',
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      key: contextKey,
-    });
-    expect(persisted.body).toEqual(expect.objectContaining({
-      scope: 'task',
-      key: contextKey,
-      content: contextValue,
-      task_id: taskId,
-    }));
+      const persisted = await getContextEntryViaApi({
+        page,
+        scope: 'task',
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        key: contextKey,
+      });
+      expect(persisted.body).toEqual(expect.objectContaining({
+        scope: 'task',
+        key: contextKey,
+        content: contextValue,
+        task_id: taskId,
+      }));
+    } finally {
+      await cleanupManagedAgentTaskWorkload({
+        projectId: prepared.projectId,
+        taskId,
+      });
+    }
   });
 
   test('keeps provider-neutral projection smoke on mbos-context without projected dependencies', async ({ page }) => {
@@ -424,6 +482,8 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
     const projectionSmokeImage = readRunnerProjectionSmokeImage();
     const projectionSmokeImageId =
       process.env.INTEGRATION_RUNNER_PROJECTION_SMOKE_IMAGE_ID?.trim() || null;
+    let cleanupProjectId: string | null = null;
+    let cleanupTaskId: string | null = null;
 
     try {
       const prepared = await prepareAgentTaskProject(page, {
@@ -443,6 +503,7 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
             }
           : {}),
       });
+      cleanupProjectId = prepared.projectId;
       if (projectionSmokeImage) {
         expect(prepared.runnerConfiguredImage).toBe(projectionSmokeImage);
         await expectManagedAgentRunnerImageEvidenceViaApi({
@@ -459,6 +520,7 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
         projectId: prepared.projectId,
         title: `Agent Task Projection ${Date.now()}`,
       });
+      cleanupTaskId = taskId;
 
       stage = 'put_task_projection_context';
       const contextKey = `notes.projection_smoke_${Date.now()}`;
@@ -562,6 +624,13 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       stage = 'done';
     } catch (error) {
       throw new Error(`provider_neutral_projection_real_smoke_failed:${stage}:${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      if (cleanupProjectId) {
+        await cleanupManagedAgentTaskWorkload({
+          projectId: cleanupProjectId,
+          taskId: cleanupTaskId,
+        });
+      }
     }
   });
 
@@ -601,86 +670,93 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       projectId: prepared.projectId,
       title: `Agent Task Locked Runtime Projection ${Date.now()}`,
     });
-    const projectionCommand = buildLockedRuntimeProjectionBoundarySmokeCommand();
-    expect(projectionCommand).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
-    expect(projectionCommand).toContain('MBOS_AGENT_TASK_ID');
-    expect(projectionCommand).toContain('MBOS_AGENT_RUN_ID');
-    expect(projectionCommand).not.toContain('LOCKED_RUNTIME_SMOKE::');
-    expect(projectionCommand).not.toContain('RUNNER_PROJECTION_BOUNDARY::ok');
-    const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      intent: [
-        'Run this exact shell command and use its stdout value in your final reply:',
-        `\`${projectionCommand}\``,
-        'Reply with exactly one line and no extra text.',
-      ].join(' '),
-    });
-    expect(runId).toBeTruthy();
-    const expectedRunId = runId!;
-    const lockedRuntimeTaskToken = `LOCKED_RUNTIME_TASK::${taskId}`;
-    const lockedRuntimeRunToken = `LOCKED_RUNTIME_RUN::${expectedRunId}`;
-    const lockedRuntimeBoundaryToken = `RUNNER_PROJECTION_BOUNDARY::ok::${taskId}::${expectedRunId}`;
+    try {
+      const projectionCommand = buildLockedRuntimeProjectionBoundarySmokeCommand();
+      expect(projectionCommand).toContain('MBOS_AGENT_PROJECTED_DEPENDENCIES');
+      expect(projectionCommand).toContain('MBOS_AGENT_TASK_ID');
+      expect(projectionCommand).toContain('MBOS_AGENT_RUN_ID');
+      expect(projectionCommand).not.toContain('LOCKED_RUNTIME_SMOKE::');
+      expect(projectionCommand).not.toContain('RUNNER_PROJECTION_BOUNDARY::ok');
+      const { runnerOutputActivityId, runId } = await startAgentTaskRunViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        intent: [
+          'Run this exact shell command and use its stdout value in your final reply:',
+          `\`${projectionCommand}\``,
+          'Reply with exactly one line and no extra text.',
+        ].join(' '),
+      });
+      expect(runId).toBeTruthy();
+      const expectedRunId = runId!;
+      const lockedRuntimeTaskToken = `LOCKED_RUNTIME_TASK::${taskId}`;
+      const lockedRuntimeRunToken = `LOCKED_RUNTIME_RUN::${expectedRunId}`;
+      const lockedRuntimeBoundaryToken = `RUNNER_PROJECTION_BOUNDARY::ok::${taskId}::${expectedRunId}`;
 
-    await expectAgentTaskRunnerEvidenceViaApi({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      runnerId: prepared.runnerId,
-    });
-    await expectManagedWorkloadPodImage({
-      namespace: INTERNAL_AGENT_K8S_NAMESPACE,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      workloadId: taskId,
-      expectedImage: lockedRuntimeSmokeImage,
-    });
-    await waitForRunnerOutputToken({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      token: lockedRuntimeTaskToken,
-      runnerOutputActivityId,
-      runId: expectedRunId,
-    });
-    await waitForRunnerOutputToken({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      token: lockedRuntimeRunToken,
-      runnerOutputActivityId,
-      runId: expectedRunId,
-    });
-    await waitForRunnerOutputToken({
-      page,
-      workspaceId: WORKSPACE_ID,
-      projectId: prepared.projectId,
-      taskId,
-      token: lockedRuntimeBoundaryToken,
-      runnerOutputActivityId,
-      runId: expectedRunId,
-    });
+      await expectAgentTaskRunnerEvidenceViaApi({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        runnerId: prepared.runnerId,
+      });
+      await expectManagedWorkloadPodImage({
+        namespace: INTERNAL_AGENT_K8S_NAMESPACE,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        workloadId: taskId,
+        expectedImage: lockedRuntimeSmokeImage,
+      });
+      await waitForRunnerOutputToken({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        token: lockedRuntimeTaskToken,
+        runnerOutputActivityId,
+        runId: expectedRunId,
+      });
+      await waitForRunnerOutputToken({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        token: lockedRuntimeRunToken,
+        runnerOutputActivityId,
+        runId: expectedRunId,
+      });
+      await waitForRunnerOutputToken({
+        page,
+        workspaceId: WORKSPACE_ID,
+        projectId: prepared.projectId,
+        taskId,
+        token: lockedRuntimeBoundaryToken,
+        runnerOutputActivityId,
+        runId: expectedRunId,
+      });
 
-    const authToken = await readStoredAuthToken(page);
-    const activityResponse = await page.request.get(
-      `${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}/projects/${prepared.projectId}/tasks/${taskId}/activity`,
-      { headers: { Authorization: `Bearer ${authToken}` } },
-    );
-    expect(activityResponse.ok()).toBeTruthy();
-    const activity = (await activityResponse.json()) as Array<{ content?: string; actor?: string; kind?: string }>;
-    const runnerOutputContent = activity
-      .filter((item) => item.actor === 'runner' && item.kind === 'runner_output')
-      .map((item) => item.content ?? '')
-      .join('\n');
-    expect(runnerOutputContent).toContain(lockedRuntimeTaskToken);
-    expect(runnerOutputContent).toContain(lockedRuntimeRunToken);
-    expect(runnerOutputContent).toContain(lockedRuntimeBoundaryToken);
-    expectRunnerOutputNotToLeakSecret(runnerOutputContent, requireRealLaneApiKey(), 'redacted provider endpoint api key');
+      const authToken = await readStoredAuthToken(page);
+      const activityResponse = await page.request.get(
+        `${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}/projects/${prepared.projectId}/tasks/${taskId}/activity`,
+        { headers: { Authorization: `Bearer ${authToken}` } },
+      );
+      expect(activityResponse.ok()).toBeTruthy();
+      const activity = (await activityResponse.json()) as Array<{ content?: string; actor?: string; kind?: string }>;
+      const runnerOutputContent = activity
+        .filter((item) => item.actor === 'runner' && item.kind === 'runner_output')
+        .map((item) => item.content ?? '')
+        .join('\n');
+      expect(runnerOutputContent).toContain(lockedRuntimeTaskToken);
+      expect(runnerOutputContent).toContain(lockedRuntimeRunToken);
+      expect(runnerOutputContent).toContain(lockedRuntimeBoundaryToken);
+      expectRunnerOutputNotToLeakSecret(runnerOutputContent, requireRealLaneApiKey(), 'redacted provider endpoint api key');
+    } finally {
+      await cleanupManagedAgentTaskWorkload({
+        projectId: prepared.projectId,
+        taskId,
+      });
+    }
   });
 
   test('reads task context through mbos-context inside a real Agent Task terminal session resolved by the default Agent Runner', async ({ page }) => {
@@ -739,15 +815,12 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       expect(output).toContain(taskNote);
       expect(output).toContain(doneMarker);
     } finally {
-      if (terminalSessionId) {
-        await deleteTerminalSessionViaApi({
-          page,
-          workspaceId: WORKSPACE_ID,
-          projectId: prepared.projectId,
-          taskId,
-          sessionId: terminalSessionId,
-        });
-      }
+      await cleanupManagedTerminalSessionWorkload({
+        page,
+        projectId: prepared.projectId,
+        taskId,
+        terminalSessionId,
+      });
     }
   });
 
@@ -796,15 +869,12 @@ test.describe('@lane-real Agent Task runner via managed Agent Runner', () => {
       expect(output.toLowerCase()).toContain('context_scope_read_only_for_agent');
       expect(output).toContain(doneMarker);
     } finally {
-      if (terminalSessionId) {
-        await deleteTerminalSessionViaApi({
-          page,
-          workspaceId: WORKSPACE_ID,
-          projectId: prepared.projectId,
-          taskId,
-          sessionId: terminalSessionId,
-        });
-      }
+      await cleanupManagedTerminalSessionWorkload({
+        page,
+        projectId: prepared.projectId,
+        taskId,
+        terminalSessionId,
+      });
     }
   });
 });

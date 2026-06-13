@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  POST_DEPLOY_PRODUCT_SMOKE_ALLOW_LOCAL_TARGET_ENV_KEY,
   parsePostDeployProductSmokeInputDoctorCliOptions,
   runPostDeployProductSmokeInputDoctor,
 } from './input-doctor';
@@ -175,6 +176,80 @@ describe('post-deploy product smoke input doctor', () => {
     await expect(runDoctor(root, { siteEnvPath })).rejects.toThrow(
       /local-kind defaults are not accepted/u,
     );
+  });
+
+  it('rejects local target URLs by default', async () => {
+    const root = tempDir('post-deploy-smoke-doctor-local-url-');
+    const siteEnvPath = writeSiteEnv(root, {
+      PUBLIC_BASE_URL: 'http://agentsmith.localtest.me:18080',
+      PUBLIC_API_BASE_URL: 'http://agentsmith.localtest.me:18080/api/v1',
+      RUNNER_PUBLIC_API_BASE_URL: 'ws://agentsmith.localtest.me:18080/api/v1',
+    });
+
+    await expect(runDoctor(root, { siteEnvPath, env: {} })).rejects.toThrow(
+      /must not use local-kind\/default local URL/u,
+    );
+  });
+
+  it.each([
+    ['true', 'true'],
+    ['yes', 'yes'],
+    ['2', '2'],
+    ['typo', 'typo'],
+  ] as const)('rejects local target URLs when local target opt-in is %s', async (_label, value) => {
+    const root = tempDir('post-deploy-smoke-doctor-local-url-invalid-opt-in-');
+    const siteEnvPath = writeSiteEnv(root, {
+      PUBLIC_BASE_URL: 'http://agentsmith.localtest.me:18080',
+      PUBLIC_API_BASE_URL: 'http://agentsmith.localtest.me:18080/api/v1',
+      RUNNER_PUBLIC_API_BASE_URL: 'ws://agentsmith.localtest.me:18080/api/v1',
+    });
+
+    await expect(runDoctor(root, {
+      siteEnvPath,
+      env: {
+        [POST_DEPLOY_PRODUCT_SMOKE_ALLOW_LOCAL_TARGET_ENV_KEY]: value,
+      },
+    })).rejects.toThrow(/must not use local-kind\/default local URL/u);
+  });
+
+  it('allows local target URLs only with explicit opt-in', async () => {
+    const root = tempDir('post-deploy-smoke-doctor-local-url-allowed-');
+    const siteEnvPath = writeSiteEnv(root, {
+      PUBLIC_BASE_URL: 'http://agentsmith.localtest.me:18080',
+      PUBLIC_API_BASE_URL: 'http://agentsmith.localtest.me:18080/api/v1',
+      RUNNER_PUBLIC_API_BASE_URL: 'ws://agentsmith.localtest.me:18080/api/v1',
+    });
+
+    await expect(runDoctor(root, {
+      siteEnvPath,
+      env: {
+        [POST_DEPLOY_PRODUCT_SMOKE_ALLOW_LOCAL_TARGET_ENV_KEY]: '1',
+      },
+    })).resolves.toMatchObject({
+      status: 'passed',
+      target: {
+        target_cluster: 'existing_kubernetes',
+        substrate_source: 'external_declared',
+        distribution: 'online',
+      },
+    });
+  });
+
+  it('does not allow local-kind profile when local target opt-in is set', async () => {
+    const root = tempDir('post-deploy-smoke-doctor-local-kind-opt-in-');
+    const siteEnvPath = writeSiteEnv(root, {
+      UNIFIED_DEPLOY_PROFILE: 'local-kind',
+      PUBLIC_BASE_URL: 'http://agentsmith.localtest.me:18080',
+      PUBLIC_API_BASE_URL: 'http://agentsmith.localtest.me:18080/api/v1',
+      RUNNER_PUBLIC_API_BASE_URL: 'ws://agentsmith.localtest.me:18080/api/v1',
+    });
+
+    await expect(runDoctor(root, {
+      siteEnvPath,
+      env: {
+        [POST_DEPLOY_PRODUCT_SMOKE_ALLOW_LOCAL_TARGET_ENV_KEY]: '1',
+      },
+    })).rejects.toThrow(/local-kind defaults are not accepted/u);
   });
 
   it('rejects raw secret env values in site env', async () => {

@@ -47,6 +47,8 @@ const DOCKER_SUBSTRATE_SCHEMA_VALUES = new Set([
 ]);
 const RUNTIME_SUBSTRATE_ENV_SOURCE_ENV_KEY = 'UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV_SOURCE';
 const RUNTIME_SUBSTRATE_ENV_PATH_ENV_KEY = 'UNIFIED_DEPLOY_PRODUCT_FLOW_RUNTIME_SUBSTRATE_ENV';
+export const POST_DEPLOY_PRODUCT_SMOKE_ALLOW_LOCAL_TARGET_ENV_KEY =
+  'AGENTSMITH_POST_DEPLOY_PRODUCT_SMOKE_ALLOW_LOCAL_TARGET';
 
 const LOCAL_DEFAULT_HOSTS = new Set([
   'localhost',
@@ -68,6 +70,28 @@ function stringValue(record: Record<string, unknown>, key: string): string {
 
 function formatValidationFailures(failures: readonly CurrentReleaseBoundaryValidationFailure[]): string {
   return failures.map((failure) => `${failure.path}: ${failure.reason}`).join('; ');
+}
+
+export function isPostDeployProductSmokeLocalTargetAllowed(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return env[POST_DEPLOY_PRODUCT_SMOKE_ALLOW_LOCAL_TARGET_ENV_KEY]?.trim() === '1';
+}
+
+export function assertPostDeployProductSmokeUrlNotLocal(
+  label: string,
+  value: string,
+  allowLocalTarget: boolean,
+): void {
+  let hostname = '';
+  try {
+    hostname = new URL(value).hostname.toLowerCase();
+  } catch {
+    throw new Error(`${label} must be a valid URL.`);
+  }
+  if (!allowLocalTarget && (LOCAL_DEFAULT_HOSTS.has(hostname) || hostname.endsWith('.localtest.me'))) {
+    throw new Error(`${label} must not use local-kind/default local URL for GA handoff.`);
+  }
 }
 
 function looksLikeDockerSubstrateEnv(source: string): boolean {
@@ -225,7 +249,7 @@ function parseProfileAxes(siteEnv: Record<string, string>): TargetAxes {
   };
 }
 
-function assertNoLocalDefaultUrls(siteEnv: Record<string, string>): void {
+function assertNoLocalDefaultUrls(siteEnv: Record<string, string>, allowLocalTarget: boolean): void {
   if (!siteEnv.PUBLIC_BASE_URL?.trim()) {
     throw new Error('site_env.PUBLIC_BASE_URL is required for GA handoff target identity.');
   }
@@ -235,15 +259,7 @@ function assertNoLocalDefaultUrls(siteEnv: Record<string, string>): void {
       continue;
     }
 
-    let hostname = '';
-    try {
-      hostname = new URL(value).hostname.toLowerCase();
-    } catch {
-      throw new Error(`site_env.${key} must be a valid URL.`);
-    }
-    if (LOCAL_DEFAULT_HOSTS.has(hostname) || hostname.endsWith('.localtest.me')) {
-      throw new Error(`${key} must not use local-kind/default local URL for GA handoff.`);
-    }
+    assertPostDeployProductSmokeUrlNotLocal(`site_env.${key}`, value, allowLocalTarget);
   }
 }
 
@@ -299,12 +315,13 @@ function assertReleaseContractTarget(
 export async function runPostDeployProductSmokeInputDoctor(
   options: PostDeployProductSmokeInputDoctorOptions,
 ): Promise<PostDeployProductSmokeInputDoctorResult> {
+  const env = options.env ?? process.env;
   const releaseContract = await readReleaseContract(options.releaseContractPath);
   const siteEnv = await readSiteEnv(options.siteEnvPath);
   const substrateTruth = await readSubstrateTruth(options.substrateTruthPath);
   await validateRuntimeSubstrateProjection(options);
   const siteTarget = parseProfileAxes(siteEnv);
-  assertNoLocalDefaultUrls(siteEnv);
+  assertNoLocalDefaultUrls(siteEnv, isPostDeployProductSmokeLocalTargetAllowed(env));
   assertTargetAxesMatch(siteTarget, axesFromRecord(substrateTruth, 'substrate_truth'), 'substrate_truth target axes');
   assertReleaseContractTarget(releaseContract, siteTarget);
 

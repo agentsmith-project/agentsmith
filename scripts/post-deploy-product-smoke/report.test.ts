@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   PRODUCT_VERIFICATION_FLOW_IDS,
@@ -19,6 +19,7 @@ import {
   PRODUCT_FLOWS_AGGREGATE_SCHEMA_VERSION,
   runPostDeployProductSmokeReportProducer,
 } from './report';
+import { POST_DEPLOY_PRODUCT_SMOKE_ALLOW_LOCAL_TARGET_ENV_KEY } from './input-doctor';
 
 const tempRoots: string[] = [];
 const RELEASE_CONTRACT_GIT_SHA = '0123456789abcdef0123456789abcdef01234567';
@@ -35,10 +36,23 @@ const GA_TARGET_PROFILE = 'existing_kubernetes/external_declared/online';
 const GA_PUBLIC_BASE_URL = 'https://agentsmith.release.example.com';
 const GA_PUBLIC_API_BASE_URL = 'https://agentsmith.release.example.com/api/v1';
 const GA_RUNNER_PUBLIC_API_BASE_URL = 'wss://agentsmith-runner.release.example.com/api/v1';
+const LOCAL_PUBLIC_BASE_URL = 'http://agentsmith.localtest.me:18080';
+const LOCAL_PUBLIC_API_BASE_URL = 'http://agentsmith.localtest.me:18080/api/v1';
+const LOCAL_RUNNER_PUBLIC_API_BASE_URL = 'ws://agentsmith.localtest.me:18080/api/v1';
+const ORIGINAL_ALLOW_LOCAL_TARGET_ENV = process.env[POST_DEPLOY_PRODUCT_SMOKE_ALLOW_LOCAL_TARGET_ENV_KEY];
+
+beforeEach(() => {
+  delete process.env[POST_DEPLOY_PRODUCT_SMOKE_ALLOW_LOCAL_TARGET_ENV_KEY];
+});
 
 afterEach(() => {
   for (const root of tempRoots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
+  }
+  if (ORIGINAL_ALLOW_LOCAL_TARGET_ENV === undefined) {
+    delete process.env[POST_DEPLOY_PRODUCT_SMOKE_ALLOW_LOCAL_TARGET_ENV_KEY];
+  } else {
+    process.env[POST_DEPLOY_PRODUCT_SMOKE_ALLOW_LOCAL_TARGET_ENV_KEY] = ORIGINAL_ALLOW_LOCAL_TARGET_ENV;
   }
 });
 
@@ -445,6 +459,76 @@ describe('post-deploy product smoke report producer', () => {
 
     expect(result.report.deployment_target.runner_public_api_base_url)
       .toBe(GA_RUNNER_PUBLIC_API_BASE_URL);
+  });
+
+  it('allows local deployment target URLs when explicit opt-in env is set', async () => {
+    const root = tempDir('post-deploy-product-smoke-local-target-allowed-');
+    const productFlowsDir = join(root, 'unified-deploy', 'product-flows');
+    const outputDir = join(root, 'post-deploy-product-smoke');
+    writeFocusedEvidenceFiles(productFlowsDir);
+    const siteEnvPath = writeText(productFlowsDir, 'site.env', siteEnvFixture({
+      PUBLIC_BASE_URL: LOCAL_PUBLIC_BASE_URL,
+      PUBLIC_API_BASE_URL: LOCAL_PUBLIC_API_BASE_URL,
+      RUNNER_PUBLIC_API_BASE_URL: LOCAL_RUNNER_PUBLIC_API_BASE_URL,
+    }));
+    const substrateTruthPath = writeJson(productFlowsDir, 'substrate-truth.json', substrateTruthFixture());
+    const aggregate = aggregateWithFlows();
+    aggregate.source = {
+      ...(aggregate.source as Record<string, unknown>),
+      public_base_url: LOCAL_PUBLIC_BASE_URL,
+      api_base_url: LOCAL_PUBLIC_API_BASE_URL,
+      runner_public_api_base_url: LOCAL_RUNNER_PUBLIC_API_BASE_URL,
+      site_env_path: siteEnvPath,
+      substrate_truth_path: substrateTruthPath,
+    };
+    const aggregatePath = writeJson(productFlowsDir, 'aggregate.json', aggregate);
+    process.env[POST_DEPLOY_PRODUCT_SMOKE_ALLOW_LOCAL_TARGET_ENV_KEY] = '1';
+
+    const result = await runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
+      productFlowsPath: aggregatePath,
+      outputDir,
+      pathRoot: root,
+      now: () => new Date('2026-05-08T00:00:00.000Z'),
+    }));
+
+    expect(result.report.deployment_target).toMatchObject({
+      profile: GA_TARGET_PROFILE,
+      public_base_url: LOCAL_PUBLIC_BASE_URL,
+      api_base_url: LOCAL_PUBLIC_API_BASE_URL,
+      runner_public_api_base_url: LOCAL_RUNNER_PUBLIC_API_BASE_URL,
+    });
+  });
+
+  it('keeps rejecting local-kind profile when local target opt-in is set', async () => {
+    const root = tempDir('post-deploy-product-smoke-local-kind-opt-in-');
+    const productFlowsDir = join(root, 'unified-deploy', 'product-flows');
+    const outputDir = join(root, 'post-deploy-product-smoke');
+    writeFocusedEvidenceFiles(productFlowsDir);
+    const siteEnvPath = writeText(productFlowsDir, 'site.env', siteEnvFixture({
+      UNIFIED_DEPLOY_PROFILE: 'local-kind',
+      PUBLIC_BASE_URL: LOCAL_PUBLIC_BASE_URL,
+      PUBLIC_API_BASE_URL: LOCAL_PUBLIC_API_BASE_URL,
+      RUNNER_PUBLIC_API_BASE_URL: LOCAL_RUNNER_PUBLIC_API_BASE_URL,
+    }));
+    const substrateTruthPath = writeJson(productFlowsDir, 'substrate-truth.json', substrateTruthFixture());
+    const aggregate = aggregateWithFlows();
+    aggregate.source = {
+      ...(aggregate.source as Record<string, unknown>),
+      public_base_url: LOCAL_PUBLIC_BASE_URL,
+      api_base_url: LOCAL_PUBLIC_API_BASE_URL,
+      runner_public_api_base_url: LOCAL_RUNNER_PUBLIC_API_BASE_URL,
+      site_env_path: siteEnvPath,
+      substrate_truth_path: substrateTruthPath,
+    };
+    const aggregatePath = writeJson(productFlowsDir, 'aggregate.json', aggregate);
+    process.env[POST_DEPLOY_PRODUCT_SMOKE_ALLOW_LOCAL_TARGET_ENV_KEY] = '1';
+
+    await expect(runPostDeployProductSmokeReportProducer(withReleaseContract(root, {
+      productFlowsPath: aggregatePath,
+      outputDir,
+      pathRoot: root,
+    }))).rejects.toThrow(/local-kind defaults are not accepted/u);
+    expect(existsSync(join(outputDir, POST_DEPLOY_PRODUCT_SMOKE_REPORT_FILENAME))).toBe(false);
   });
 
   it.each([

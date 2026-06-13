@@ -16,6 +16,10 @@ import {
   type PostDeployProductSmokeId,
 } from './constants';
 import {
+  assertPostDeployProductSmokeUrlNotLocal,
+  isPostDeployProductSmokeLocalTargetAllowed,
+} from './input-doctor';
+import {
   CURRENT_SUBSTRATE_CONNECTION_SCHEMA_VERSION,
   validateAgentSmithReleaseContract,
   validateSubstrateConnectionTruth,
@@ -593,14 +597,6 @@ const DOCKER_SUBSTRATE_SCHEMA_VALUES = new Set([
   'agentsmith.docker-substrate.truth/v1',
   'docker-substrate.truth/v1',
 ]);
-const LOCAL_DEFAULT_HOSTS = new Set([
-  'localhost',
-  '127.0.0.1',
-  '0.0.0.0',
-  '::1',
-  '[::1]',
-  'agentsmith.localtest.me',
-]);
 
 function resolveAggregateSourcePath(
   rawPath: string,
@@ -721,15 +717,11 @@ function parseProfileAxes(profile: string): TargetAxes {
 }
 
 function assertNoLocalDefaultUrl(label: string, value: string): void {
-  let hostname = '';
-  try {
-    hostname = new URL(value).hostname.toLowerCase();
-  } catch {
-    throw new Error(`${label} must be a valid URL.`);
-  }
-  if (LOCAL_DEFAULT_HOSTS.has(hostname) || hostname.endsWith('.localtest.me')) {
-    throw new Error(`${label} must not use local-kind/default local URL for GA handoff.`);
-  }
+  assertPostDeployProductSmokeUrlNotLocal(
+    label,
+    value,
+    isPostDeployProductSmokeLocalTargetAllowed(),
+  );
 }
 
 function looksLikeDockerSubstrateEnv(source: string): boolean {

@@ -82,6 +82,10 @@ GA 只保留两类正式 verdict：
 - `use_existing`：operator 提供 PostgreSQL/pgvector、MongoDB、Redis、S3-compatible storage、Keycloak/OIDC、存储类、ingress/TLS 等连接真相。
 - `install_substrates`：release-kit 在 operator 提供的现有 Kubernetes namespace/storage/registry 前提下，安装 release-kit 自带的最小 substrate pack，并产出可被部署链消费的 substrate truth。
 
+`use_existing` 的验证语义是：release-kit 使用 operator 提供的 `agentsmith.substrate-connection.truth/v1` substrate truth 和 target prerequisites 完成 preflight、render/check、apply、rollout、route smoke 与 deployment path report。它不运行 substrate installer，不创建或修改 PostgreSQL/MongoDB/Redis/Object Storage/OIDC 等 substrates，也不消费 `install_substrates` 的 namespace-scoped installer evidence；它与 `install_substrates` 的 `kit_installed` namespace、ownership 和 evidence 隔离。
+
+Rehearsal/GA 可以使用 operator 在本地或目标环境预先安装好的 existing substrates。只要 actual deployment 绑定当前 release inputs、当前 substrate truth digest，并通过 required path report / smoke，本地 operator-provided existing substrates 就是正式 GA evidence。实际实施里，`use_existing` 通常连接外部云服务提供的 PostgreSQL/MongoDB/Redis/Object Storage/OIDC 等 substrates；这只是 operator 配置和 substrate truth 差异，不是 release-kit 或 AgentSmith 功能差异。当前 GA 不要求真实云厂商托管服务验证，也不得把它升级为 gate 或四路径矩阵外的必跑项。
+
 KISS 边界：
 
 - `install_substrates` 只安装 release-kit 自带的 namespace-scoped substrate pack。
@@ -106,6 +110,7 @@ GA 发布完成必须同时满足：
    - `online/install_substrates`
    - `airgap/use_existing`
    - `airgap/install_substrates`
+   同一 rehearsal/GA 的 path evidence 必须来自当前 `release_id`、git sha、operator-inputs、substrate truth digest、deployment path report 和 post-deploy smoke；旧 evidence、旧 path report、旧 smoke report 不可复用为当前 GA 通过。
 4. Release-kit final `ga-release-report.json` 输出 `status: pass` 且 `formal_verdict: issued`。
 5. Airgap 包可以在无公网下载前提下完成：bundle check、image archive materiality、image load、offline render check、apply、rollout、smoke。
 6. 最小功能 smoke 在部署后通过：
@@ -215,9 +220,9 @@ npm run product:status
 | Product handoff | `product:ready`、release contract artifact、deploy template package、release contract source gate、runtime pending/readiness 收口证据 | AgentSmith |
 | Runner | runner CI、runtime fast、image publish、locked image task-execution smoke、runner release manifest、AgentSmith lock adoption | Runner + AgentSmith |
 | Dependency images | llmup release/image digest、AFSCP release/image digest、ASBCP release/image digest、AgentSmith lock adoption | AgentSmith |
-| online/use_existing | target preflight、render/check、registry presence、apply、rollout、route smoke、deployment path report | release-kit |
+| online/use_existing | operator-provided existing substrate truth、target preflight、render/check、registry presence、apply、rollout、route smoke、deployment path report | release-kit |
 | online/install_substrates | substrate installer、substrate truth、routability、render/check、apply、rollout、route smoke、deployment path report | release-kit |
-| airgap/use_existing | bundle create/check、image archive materiality、offline image load、offline render/check、apply、rollout、route smoke、deployment path report | release-kit |
+| airgap/use_existing | operator-provided existing substrate truth、bundle create/check、image archive materiality、offline image load、offline render/check、apply、rollout、route smoke、deployment path report | release-kit |
 | airgap/install_substrates | bundle create/check、substrate installer bundle、image load、substrate install truth、offline render/check、apply、rollout、route smoke、deployment path report | release-kit |
 | Post-deploy product smoke | `npm run lane:unified-deploy:product-flows` 按 deployed target/run 产出的 canonical reports；final GA 至少需要 `<online-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json` 和 `<airgap-ga-smoke-evidence-root>/post-deploy-product-smoke/post-deploy-product-smoke-report.json`，覆盖 auth/profile、workspace/project、Files、managed runner Agent task、provider-neutral Endpoint、audit/usage readback | AgentSmith |
 | Runtime pending/readiness | Product Readiness report 中的 `runtime_readiness.observation_policy` 与 Files restore continuation focused backend-real `runtime-readiness-details.json`，覆盖 pending/releasing/offline/not_found 收口规则、AGENT_SANDBOX_UNAVAILABLE 诊断摘要、runtime flake / stability blocker 分类和递增等待间隔 | AgentSmith |
@@ -231,6 +236,7 @@ GA 的判定是：
 
 - 符合 prerequisites 的 Kubernetes。
 - 明确的 substrate truth。
+- `use_existing` 可以由本地 operator-provided existing substrates 或外部服务连接真相证明；不要求云厂商托管服务作为当前 GA gate。
 - digest-pinned image closure。
 - online 或 airgap artifact 消费。
 - 最小产品链路 smoke。
@@ -311,7 +317,7 @@ GA 的判定是：
 任务：
 
 1. 新增 `operator-inputs init/doctor`：生成输入包骨架、校验 secret refs/TLS/reachability、输出缺项清单。
-2. `use_existing`：收敛 substrate truth schema、target prerequisite schema 和 doctor/preflight 输出；`substrate_secret_refs` 等重复列表优先由 substrate truth 推导，不要求 operator 手工维护两份。
+2. `use_existing`：收敛 substrate truth schema、target prerequisite schema 和 doctor/preflight 输出；`substrate_secret_refs` 等重复列表优先由 substrate truth 推导，不要求 operator 手工维护两份；不运行 installer，不读取 `install_substrates` installer report 或 namespace evidence。
 3. `install_substrates`：新增最小 installer producer，安装 namespace-scoped substrate pack，输出 `substrate-install-report.json` 和 substrate truth。
 4. airgap bundle 包含 installer 所需 images、manifests、scripts、checksums、runbook。
 5. 明确不做 cloud resource provisioning。
@@ -419,6 +425,7 @@ GA 的判定是：
 - 所有 required artifacts 未过期。
 - 所有 images digest-pinned。
 - Airgap 包不依赖公网下载。
+- `use_existing` rehearsal 可以复用 operator 预装的本地 substrates，但必须重跑当前 release inputs 生成新的 path report / smoke；不能复用旧 evidence。
 - Operator 文档可以按 copy/paste 执行。
 
 ## 6. 开发团队切片建议

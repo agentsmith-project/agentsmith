@@ -58,9 +58,12 @@ repo-local gates and evidence.
 Release-kit handoff plans must use operator-facing language for the deployment
 choice: `online` / `airgap` distribution against both substrate strategies:
 
-- `use_existing`: connect to operator-provided substrates or cloud interfaces
-  such as PostgreSQL/pgvector, MongoDB, Redis, S3-compatible storage, and
-  Keycloak/OIDC.
+- `use_existing`: bind to operator-provided existing substrates through
+  substrate truth and target prerequisites. The substrates can be locally
+  installed by the operator for rehearsal/GA or external/cloud services in
+  implementation. This strategy does not run the release-kit substrate
+  installer, does not consume namespace-scoped installer evidence, and does
+  not require managed cloud service verification as a current GA gate.
 - `install_substrates`: run the release-kit namespace-scoped installer,
   consume its generated substrate truth, and bind the deployment path to the
   installer report plus explicit operator confirmation.
@@ -74,6 +77,12 @@ product repo, does not create a cloud provider matrix, and does not imply cloud
 cluster/database/bucket/IAM/network provisioning. The `kit_provided`
 compatibility alias remains internal to transition-only diagnostics and is not a
 GA operator `deployment_path`.
+
+A local actual deployment using operator-provided existing substrates is valid
+GA evidence for `use_existing` when it binds the current release inputs,
+substrate truth digest, deployment path report, and smoke evidence. Evidence
+from previous rehearsal or GA runs must not be reused for the current GA
+verdict.
 
 `kind` is only an optional local substrate/rehearsal option. It is not a formal
 release target, not the production default, and cannot replace existing

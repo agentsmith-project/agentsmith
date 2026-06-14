@@ -3,7 +3,7 @@
 # The digest below is the current pinned release truth for release contract handoff.
 # Format: afscp_version=<version>, afscp_source_image=<image:tag@sha256:digest>,
 # afscp_release_url=<github-release-url>, and afscp_commit_sha=<tag-commit-sha>
-afscp_version=v1.0.23
-afscp_source_image=ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.23@sha256:cfffb60189d4c47caf29d783bdb67b91c17789774ff05bca0de45fa5e60f6f3a
-afscp_release_url=https://github.com/agentsmith-project/agentsmith-fs-control-plane/releases/tag/v1.0.23
-afscp_commit_sha=a3a56bb94db6eef25c9a855340d1215b138f83cf
+afscp_version=v1.0.24
+afscp_source_image=ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.24@sha256:927b42659daf67312a7512c58294a824c625b4485d5bf7e24d6eb6eaecae2c1a
+afscp_release_url=https://github.com/agentsmith-project/agentsmith-fs-control-plane/releases/tag/v1.0.24
+afscp_commit_sha=a92cfa7dbac13670213b0105d2ff1f65ccb20935

@@ -1317,7 +1317,7 @@ describe('unified deploy render producer', () => {
     });
     expect(afscpApi.image).toBe(afscpWorker.image);
     expect(exportGateway.image).toBe(afscpApi.image);
-    expect(schemaJobSpec.backoffLimit).toBe(0);
+    expect(schemaJobSpec.backoffLimit).toBe(3);
     expect(schemaJobSpec.ttlSecondsAfterFinished).toBe(86400);
     expect(schemaJobPodSpec.restartPolicy).toBe('Never');
     expect(schemaJobPodSpec.serviceAccountName).toBe('afscp-runtime');
@@ -1334,7 +1334,7 @@ describe('unified deploy render producer', () => {
       { configMapRef: { name: 'afscp-runtime-config' } },
       { secretRef: { name: 'afscp-runtime-secrets' } },
     ]));
-    expect(volumeJobSpec.backoffLimit).toBe(0);
+    expect(volumeJobSpec.backoffLimit).toBe(3);
     expect(volumeJobSpec.ttlSecondsAfterFinished).toBe(86400);
     expect(volumeJobPodSpec.restartPolicy).toBe('Never');
     expect(volumeJobPodSpec.serviceAccountName).toBe('afscp-runtime');

@@ -118,6 +118,7 @@ const AFSCP_VOLUME_PVC = 'afscp-default-volume';
 const AFSCP_SCHEMA_BOOTSTRAP_JOB = 'afscp-schema-bootstrap';
 const AFSCP_VOLUME_BOOTSTRAP_JOB = 'afscp-volume-bootstrap';
 const AFSCP_SCHEMA_CHECK_INIT_CONTAINER = 'afscp-schema-check';
+const AFSCP_BOOTSTRAP_BACKOFF_LIMIT = 3;
 const AFSCP_VOLUME_STORAGE_QUANTITY = '12P';
 const AFSCP_VOLUME_ROOT_PATH = '/data/afscp/volumes/default';
 const AFSCP_JVS_CWD_VOLUME = 'afscp-jvs-cwd';
@@ -1224,8 +1225,12 @@ function checkAfscpBootstrapJob(
   if (resourceName(job) !== jobName || resourceNamespace(job) !== namespace) {
     addFailure(failures, `Job/${jobName}`, `${label} Job must be namespace-local`);
   }
-  if (jobSpec.backoffLimit !== 0 || jobSpec.ttlSecondsAfterFinished !== 86400) {
-    addFailure(failures, `Job/${jobName}`, `${label} Job must fail fast and retain short-lived completion evidence`);
+  if (jobSpec.backoffLimit !== AFSCP_BOOTSTRAP_BACKOFF_LIMIT || jobSpec.ttlSecondsAfterFinished !== 86400) {
+    addFailure(
+      failures,
+      `Job/${jobName}`,
+      `${label} Job must allow bounded substrate retry and retain short-lived completion evidence`,
+    );
   }
   if (podSpec.restartPolicy !== 'Never') {
     addFailure(failures, `Job/${jobName}`, `${label} Job must leave a failed Pod for diagnostics`);

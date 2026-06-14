@@ -822,6 +822,8 @@ describe('deploy template package generator', () => {
     });
     const afscp = readArchiveMemberBytes(result.archivePath, 'templates/app/afscp.yaml').toString('utf8');
 
+    expect(afscp.match(/backoffLimit: 3/gu)).toHaveLength(2);
+    expect(afscp).not.toContain('backoffLimit: 0');
     expect(afscp).toMatch(
       /name: afscp-volume-bootstrap[\s\S]*?initContainers:\s*\n\s*- name: afscp-schema-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-migrate[\s\S]*?- --apply[\s\S]*?- --check[\s\S]*?containers:\s*\n\s*- name: afscp-volume-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-volume-bootstrap/u,
     );

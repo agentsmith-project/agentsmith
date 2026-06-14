@@ -84,7 +84,7 @@ metadata:
   annotations:
     rendered-by: agentsmith-unified-deploy
 spec:
-  backoffLimit: 0
+  backoffLimit: 3
   ttlSecondsAfterFinished: 86400
   template:
     metadata:
@@ -187,7 +187,7 @@ metadata:
   annotations:
     rendered-by: agentsmith-unified-deploy
 spec:
-  backoffLimit: 0
+  backoffLimit: 3
   ttlSecondsAfterFinished: 86400
   template:
     metadata:

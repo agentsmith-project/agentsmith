@@ -73,6 +73,7 @@ const AGENTSMITH_APP_SECRET_KEYS = [
 ] as const;
 const PRODUCT_SCHEMA_BOOTSTRAP_JOB = 'agentsmith-product-schema-bootstrap';
 const PRODUCT_SCHEMA_BOOTSTRAP_SCRIPT = 'packages/api-entry-node/dist/product-schema-bootstrap.js';
+const PRODUCT_SCHEMA_BOOTSTRAP_BACKOFF_LIMIT = 3;
 const API_PACKAGE_REQUIRED_BUILD_ARGS = [
   'src/index.ts',
   'src/product-schema-bootstrap.ts',
@@ -887,11 +888,11 @@ function checkProductSchemaBootstrapJob(
   if (resourceNamespace(job) !== namespace) {
     addFailure(failures, `Job/${PRODUCT_SCHEMA_BOOTSTRAP_JOB}`, 'product schema bootstrap Job must be namespace-local');
   }
-  if (jobSpec.backoffLimit !== 0 || jobSpec.ttlSecondsAfterFinished !== 86400) {
+  if (jobSpec.backoffLimit !== PRODUCT_SCHEMA_BOOTSTRAP_BACKOFF_LIMIT || jobSpec.ttlSecondsAfterFinished !== 86400) {
     addFailure(
       failures,
       `Job/${PRODUCT_SCHEMA_BOOTSTRAP_JOB}`,
-      'product schema bootstrap Job must fail fast and retain short-lived completion evidence',
+      'product schema bootstrap Job must allow bounded substrate retry and retain short-lived completion evidence',
     );
   }
   if (podSpec.restartPolicy !== 'Never') {

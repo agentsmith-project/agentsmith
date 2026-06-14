@@ -793,6 +793,8 @@ describe('deploy template package generator', () => {
 
     expect(workloads).toContain('${{ images.agentsmith_app.image }}');
     expect(workloads).toContain('${{ images.managed_runner.image }}');
+    expect(workloads).toMatch(/name: agentsmith-product-schema-bootstrap[\s\S]*?backoffLimit: 3/u);
+    expect(workloads.match(/backoffLimit: 3/gu)).toHaveLength(1);
     expect(config).toContain('${{ images.managed_runner.image }}');
     expect(workloads).not.toContain('{{API_IMAGE}}');
     expect(workloads).not.toContain('{{WEB_IMAGE}}');

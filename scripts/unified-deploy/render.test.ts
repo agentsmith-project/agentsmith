@@ -1118,7 +1118,7 @@ describe('unified deploy render producer', () => {
       { name: 'PORT', value: '20000' },
       { name: 'INTERNAL_AGENT_IMAGE', value: siteEnv.MANAGED_RUNNER_IMAGE },
     ]));
-    expect(productSchemaJobSpec.backoffLimit).toBe(0);
+    expect(productSchemaJobSpec.backoffLimit).toBe(3);
     expect(productSchemaJobSpec.ttlSecondsAfterFinished).toBe(86400);
     expect(productSchemaJobPodSpec.restartPolicy).toBe('Never');
     expect(productSchemaJobPodSpec.serviceAccountName).toBe('agentsmith-app');
@@ -1173,6 +1173,7 @@ describe('unified deploy render producer', () => {
       'agentsmith-product-schema-bootstrap',
     );
     asRecord(productSchemaJob.metadata).namespace = 'wrong-namespace';
+    productSchemaJobSpec.backoffLimit = 0;
     productSchemaJobPodSpec.serviceAccountName = 'default';
     productSchemaJobContainer.image = 'ghcr.io/mbos/agentsmith-app:wrong';
     productSchemaJobContainer.command = ['npm'];
@@ -1188,6 +1189,9 @@ describe('unified deploy render producer', () => {
       .join('\n');
 
     expect(text).toContain('product schema bootstrap Job must be namespace-local');
+    expect(text).toContain(
+      'product schema bootstrap Job must allow bounded substrate retry and retain short-lived completion evidence',
+    );
     expect(text).toContain('product schema bootstrap Job must use agentsmith-app ServiceAccount');
     expect(text).toContain('product schema bootstrap Job must use the rendered API image');
     expect(text).toContain('product schema bootstrap Job must run node packages/api-entry-node/dist/product-schema-bootstrap.js');

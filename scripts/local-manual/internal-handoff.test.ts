@@ -348,7 +348,7 @@ describe('local-manual internal handoff', () => {
 
     expect(common).toContain('AFSCP/JVS is a local development/test dependency, not the business deployment path');
     expect(common).toContain('AFSCP_LOCAL_RUNTIME_MODE="${AFSCP_LOCAL_RUNTIME_MODE:-image}"');
-    expect(common).toContain('AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.29@sha256:90bbd2dbf0e9d2c3c98a03c0c438be026ed49734f9fb123fa2f40cf2061f52d1}}"');
+    expect(common).toContain('AFSCP_LOCAL_RUNTIME_IMAGE="${AFSCP_LOCAL_RUNTIME_IMAGE:-${AFSCP_IMAGE:-ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.30@sha256:5326a9a54a9fa67f27dc0983a4e7955044a03d67676f682812894daaf83d860e}}"');
     expect(common).toContain('afscp_docker_run_inherit_image_user --rm /usr/local/bin/afscp-worker --run-once');
     expect(common).toContain('afscp_docker_start_inherit_image_user "${AFSCP_EXPORT_GATEWAY_CONTAINER_ID_FILE}" "${AFSCP_EXPORT_GATEWAY_CONTAINER_NAME}" /usr/local/bin/afscp-export-gateway --serve');
     expect(common).toContain('afscp_docker_start "${AFSCP_API_CONTAINER_ID_FILE}" "${AFSCP_API_CONTAINER_NAME}" /usr/local/bin/afscp-api --serve');
@@ -796,7 +796,7 @@ describe('local-manual internal handoff', () => {
     const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> };
 
     expect(packageJson.scripts['test:afscp-jvs-image:smoke']).toBe('bash scripts/afscp-jvs-image-smoke.sh');
-    expect(script).toContain('ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.29@sha256:90bbd2dbf0e9d2c3c98a03c0c438be026ed49734f9fb123fa2f40cf2061f52d1');
+    expect(script).toContain('ghcr.io/agentsmith-project/agentsmith-fs-control-plane:v1.0.30@sha256:5326a9a54a9fa67f27dc0983a4e7955044a03d67676f682812894daaf83d860e');
     expect(script).toContain('EXPECTED_JVS_SHA256="${EXPECTED_JVS_SHA256:-fa4ada8e3353f85679d13870ea53307caafbd8217b04ba576b185105d9178cef}"');
     expect(script).toContain('EXPECTED_JVS_SOURCE_REF="${EXPECTED_JVS_SOURCE_REF:-jvs@v0.4.10:6a0f762bc436f0d3dc7c7c1d60847992c3a82718}"');
     expect(script).toContain('docker run --rm --network=none --entrypoint /usr/local/bin/jvs');

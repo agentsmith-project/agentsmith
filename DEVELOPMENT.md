@@ -96,8 +96,10 @@ CI 前本地验证口径：
 
 - CI 前不能裸奔；每个 change slice 至少跑与改动风险匹配的最小本地检查，并在交付说明中记录命令/结果，或说明不能运行的原因。
 - 小改动不要求本地跑 `npm run product:ready`、backend-real full、full visual、release-kit 四路径或 airgap 全链路；这些只在阶段收口、merge/release 前、高风险跨层变更或 incident 修复后升级执行。
+- 完整 Product Readiness / GA gate 是候选签发，不是日常调试；只有相关 hotfix 完成、owner focused checks 通过、image release/adoption 稳定、无未解释 blocker、准备 release materials / GA evidence 时升级执行。
 - 风险分层示例：docs-only 跑 docs/static guard；contract/API/权限/route 跑 contract/type/相关 unit；UI/visual 跑相关 unit、focused e2e 或 targeted visual；Files/sandbox/runner/runtime 跑 owner focused diagnostic 或 backend-real smoke；release/adoption/image lock 跑对应 contract/lock check；阶段收口或发布前回到 `npm run verify -- --goal=... --run` 或 `npm run product:ready`。
 - CI 是统一环境复核、保护、产物签发与 evidence 生产，不替代基本本地验证。CI failure 指向真实 bug 时，转入 owner repo 根因、业务逻辑或运行时不变量修复，不用 rerun、retry、report 或拉长等待掩盖。
+- 首次环境前提缺失或 CI flake 先记录为 env prerequisite / CI flake，清理或扩容后重跑；连续复现再升级 CI stability blocker，不写成 product_regression。
 - 不为这条规则新增流程、看板、PR bot、强制 evidence 包或 wrapper；按 KISS / DRY / YAGNI 保持最小执行面。
 
 Files / sandbox / runtime readiness blocker 处理口径：

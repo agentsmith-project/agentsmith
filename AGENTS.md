@@ -118,6 +118,8 @@ Raw `test:*`, `gate:*`, `lane:*`, `backend-real:*` 和底层 owner adapter 命�
 - focused 变绿只是局部证据，不是发布签署；最终 evidence 必须匹配用户请求与改动风险。
 - 每个 change slice 先按 `DEVELOPMENT.md` 的 “Pre-GA 开发提效约定” 明确 exit criteria / evidence。
 - 重门禁只在风险和阶段匹配时跑；不要把 focused diagnostic 写成 release/deploy/package/operator verdict。
+- 完整 Product Readiness / GA gate 是候选签发，不是日常调试；只有相关 hotfix 完成、owner focused checks 通过、image release/adoption 稳定、无未解释 blocker、准备 release materials / GA evidence 时升级执行。
+- 首次环境前提缺失或 CI flake 先记录为 env prerequisite / CI flake，清理或扩容后重跑；连续复现再升级 CI stability blocker，不写成 product_regression。
 - Product Readiness 或 focused gate 暴露 Files / sandbox / runtime readiness blocker 时，先按 `DEVELOPMENT.md` 的 “Files / sandbox / runtime readiness blocker 处理口径” 和 `docs/contracts/afscp-file-libraries-architecture.md` 定 owner、terminal truth 与用户可见事实；focused evidence 只用于缩小 owner，不新增 report/gate/fixture/wrapper retry，也不拉长等待或无限重试来掩盖 `pending` / `releasing` / `offline` / `not_found` 收敛缺口。
 
 **skill runtime diagnostics**:

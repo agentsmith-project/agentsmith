@@ -160,6 +160,9 @@ const RELEASE_LATEST_POINTER_KEYS = new Set([
 const GIT_COMMIT_HASH_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
 const SHA256_DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const RELEASE_SUMMARY_REPORT_SIZE_EXCLUDED_DIR_NAMES = new Set([
+  'afscp-juicefs-cache',
+]);
 
 interface ParsedTerminalResult {
   schema_version?: unknown;
@@ -287,7 +290,17 @@ function listFilesForSize(root: string): readonly string[] {
     if (!stat.isDirectory()) {
       return;
     }
-    for (const entry of readdirSync(path)) {
+    if (RELEASE_SUMMARY_REPORT_SIZE_EXCLUDED_DIR_NAMES.has(basename(path))) {
+      return;
+    }
+
+    let entries: string[];
+    try {
+      entries = readdirSync(path);
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
       visit(join(path, entry));
     }
   };

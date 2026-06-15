@@ -31,6 +31,7 @@ jobs:
       PRESET_ENDPOINT_API_KEY: ${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}
       RELEASE_CAMPAIGN_RUN_ID: product-readiness-${{ github.run_id }}
       RELEASE_CAMPAIGN_ROOT: artifacts/release-runs/product-readiness-${{ github.run_id }}
+      PRODUCT_READINESS_ARTIFACT_STAGE: ${{ runner.temp }}/agentsmith-product-readiness/artifact
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -90,6 +91,27 @@ jobs:
           test -f "${RELEASE_CAMPAIGN_ROOT}/summary.json"
           test -f "${RELEASE_CAMPAIGN_ROOT}/gate-release-full/result.json"
 
+      - name: Stage product readiness artifact
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${PRODUCT_READINESS_ARTIFACT_STAGE}"
+          mkdir -p "${PRODUCT_READINESS_ARTIFACT_STAGE}"
+          if [[ -d "${RELEASE_CAMPAIGN_ROOT}" ]]; then
+            mkdir -p "${PRODUCT_READINESS_ARTIFACT_STAGE}/release-runs"
+            rsync -a --prune-empty-dirs \
+              --exclude='**/afscp-juicefs-cache/' \
+              --exclude='**/next-dist/' \
+              "${RELEASE_CAMPAIGN_ROOT}/" \
+              "${PRODUCT_READINESS_ARTIFACT_STAGE}/release-runs/${RELEASE_CAMPAIGN_RUN_ID}/"
+          fi
+          if [[ -d test-results ]]; then
+            rsync -a test-results/ "${PRODUCT_READINESS_ARTIFACT_STAGE}/test-results/"
+          fi
+          if [[ -d playwright-report ]]; then
+            rsync -a playwright-report/ "${PRODUCT_READINESS_ARTIFACT_STAGE}/playwright-report/"
+          fi
+
       - name: Upload product readiness artifact
         if: always()
         uses: actions/upload-artifact@v7
@@ -97,6 +119,4 @@ jobs:
           name: agentsmith-product-readiness
           if-no-files-found: error
           path: |
-            ${{ env.RELEASE_CAMPAIGN_ROOT }}/**
-            test-results/**
-            playwright-report/**
+            ${{ env.PRODUCT_READINESS_ARTIFACT_STAGE }}/**

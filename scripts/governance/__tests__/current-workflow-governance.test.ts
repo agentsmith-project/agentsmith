@@ -101,6 +101,8 @@ const PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_DIR =
   '${{ runner.temp }}/agentsmith-product-readiness/input';
 const PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_PATH =
   '${{ runner.temp }}/agentsmith-product-readiness/input/agentsmith-release-contract.json';
+const PRODUCT_READINESS_ARTIFACT_STAGE =
+  '${{ runner.temp }}/agentsmith-product-readiness/artifact';
 const PRODUCT_READINESS_RUN_COMMAND =
   'npm run product:ready -- --release-contract "${RELEASE_CONTRACT_INPUT_PATH}"';
 const PRODUCT_READINESS_CHECKOUT_INPUT_PATH = 'artifacts/product-readiness/input';
@@ -110,9 +112,7 @@ const PRODUCT_READINESS_HANDOFF_RELATIVE_PATHS = [
   'gate-release-full/result.json',
 ] as const;
 const PRODUCT_READINESS_ARTIFACT_PATHS = [
-  '${{ env.RELEASE_CAMPAIGN_ROOT }}/**',
-  'test-results/**',
-  'playwright-report/**',
+  '${{ env.PRODUCT_READINESS_ARTIFACT_STAGE }}/**',
 ] as const;
 const POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_WORKFLOW_PATH =
   '.github/workflows/post-deploy-product-smoke-artifact.yml';
@@ -1282,6 +1282,7 @@ describe('current workflow governance', () => {
     expect(jobEnv.PRESET_ENDPOINT_API_KEY).toBe(
       '${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}',
     );
+    expect(jobEnv.PRODUCT_READINESS_ARTIFACT_STAGE).toBe(PRODUCT_READINESS_ARTIFACT_STAGE);
     expect(downloadWith.path).toBe(PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_DIR);
     expect(String(downloadWith.path ?? '')).not.toMatch(/^artifacts\//);
     expect(verifyEnv.RELEASE_CONTRACT_INPUT_PATH).toBe(PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_PATH);
@@ -1305,9 +1306,13 @@ describe('current workflow governance', () => {
     const job = workflow?.jobs.find((entry) => entry.id === PRODUCT_READINESS_ARTIFACT_JOB_ID);
     const parsedWorkflow = parseWorkflow(PRODUCT_READINESS_ARTIFACT_WORKFLOW_PATH);
     const steps = collectJobSteps(parsedWorkflow, PRODUCT_READINESS_ARTIFACT_JOB_ID);
+    const stageStepIndex = steps.findIndex((step) => step.name === 'Stage product readiness artifact');
+    const uploadStepIndex = steps.findIndex((step) => step.name === 'Upload product readiness artifact');
     const handoffStep = steps.find((step) => step.name === 'Verify product readiness handoff files');
+    const stageStep = steps.find((step) => step.name === 'Stage product readiness artifact');
     const uploadStep = steps.find((step) => step.name === 'Upload product readiness artifact');
     const handoffRun = typeof handoffStep?.run === 'string' ? handoffStep.run : '';
+    const stageRun = typeof stageStep?.run === 'string' ? stageStep.run : '';
     const uploadWith = asRecord(uploadStep?.with);
     const uploadPaths = typeof uploadWith.path === 'string'
       ? uploadWith.path.split('\n').map((line) => line.trim()).filter(Boolean)
@@ -1319,11 +1324,23 @@ describe('current workflow governance', () => {
     for (const relativePath of PRODUCT_READINESS_HANDOFF_RELATIVE_PATHS) {
       expect(handoffRun).toContain(`test -f "\${RELEASE_CAMPAIGN_ROOT}/${relativePath}"`);
     }
+    expect(stageStep?.if).toBe('always()');
+    expect(stageStepIndex).toBeGreaterThanOrEqual(0);
+    expect(uploadStepIndex).toBeGreaterThanOrEqual(0);
+    expect(stageStepIndex).toBeLessThan(uploadStepIndex);
+    expect(stageRun).toContain('rsync -a --prune-empty-dirs');
+    expect(stageRun).toContain("--exclude='**/afscp-juicefs-cache/'");
+    expect(stageRun).toContain("--exclude='**/next-dist/'");
+    expect(stageRun).toContain('"${PRODUCT_READINESS_ARTIFACT_STAGE}/release-runs/${RELEASE_CAMPAIGN_RUN_ID}/"');
+    expect(stageRun).toContain('rsync -a test-results/');
+    expect(stageRun).toContain('rsync -a playwright-report/');
     expect(uploadStep?.if).toBe('always()');
     expect(uploadWith['if-no-files-found']).toBe('error');
     expect(uploadPaths).toEqual(PRODUCT_READINESS_ARTIFACT_PATHS);
+    expect(uploadPaths).not.toContain('${{ env.RELEASE_CAMPAIGN_ROOT }}/**');
     expect(job?.notes).toMatch(/success-only file check/i);
     expect(job?.notes).toMatch(/not a failed-run verdict/i);
+    expect(job?.notes).toMatch(/excluding runtime caches/i);
   });
 
   it('keeps post-deploy product smoke as a canonical online or airgap handoff artifact producer', () => {

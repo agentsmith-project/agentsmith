@@ -560,6 +560,43 @@ describe('release readiness human entrypoints', () => {
     }
   });
 
+  it('does not let unreadable AFSCP JuiceFS cache block release summary report sizing', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-summary-cache-boundary-'));
+    const cacheLeaf = join(
+      root,
+      'gate-release',
+      'child-internal-evidence',
+      'internal-gate-20050',
+      'afscp-juicefs-cache',
+      '2e5b67b4-fede-4817-a739-d559800853b1',
+    );
+    try {
+      writeTerminalResult(root);
+      mkdirSync(cacheLeaf, { recursive: true });
+      writeFileSync(join(cacheLeaf, 'runtime-cache.bin'), 'runtime cache is not readiness evidence\n');
+      chmodSync(cacheLeaf, 0o000);
+
+      const summary = writeReleaseSummaryForCampaign({
+        campaignRoot: root,
+        latestPath: join(root, 'latest.json'),
+        resolveGitSha: () => VALID_TEST_GIT_SHA,
+      });
+
+      expect(summary.status).toBe('passed');
+      expect(summary.failure_class).toBe('none');
+      expect(summary.run_observability?.report_size_bytes).toBeGreaterThan(0);
+      expect(existsSync(join(root, 'summary.json'))).toBe(true);
+      expect(existsSync(join(root, 'summary.md'))).toBe(true);
+    } finally {
+      try {
+        chmodSync(cacheLeaf, 0o700);
+      } catch {
+        // Best-effort permission restoration for cleanup.
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('records an explicitly provided release contract as a short validated summary', () => {
     const root = mkdtempSync(join(tmpdir(), 'agentsmith-release-summary-contract-'));
     const latestPath = join(root, 'latest.json');

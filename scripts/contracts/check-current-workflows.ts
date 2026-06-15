@@ -72,6 +72,8 @@ const PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_DIR =
   '${{ runner.temp }}/agentsmith-product-readiness/input';
 const PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_PATH =
   '${{ runner.temp }}/agentsmith-product-readiness/input/agentsmith-release-contract.json';
+const PRODUCT_READINESS_ARTIFACT_STAGE =
+  '${{ runner.temp }}/agentsmith-product-readiness/artifact';
 const PRODUCT_READINESS_RUN_COMMAND =
   'npm run product:ready -- --release-contract "${RELEASE_CONTRACT_INPUT_PATH}"';
 const PRODUCT_READINESS_CHECKOUT_INPUT_PATH = 'artifacts/product-readiness/input';
@@ -81,9 +83,7 @@ const PRODUCT_READINESS_HANDOFF_RELATIVE_PATHS = [
   'gate-release-full/result.json',
 ] as const;
 const PRODUCT_READINESS_ARTIFACT_PATHS = [
-  '${{ env.RELEASE_CAMPAIGN_ROOT }}/**',
-  'test-results/**',
-  'playwright-report/**',
+  '${{ env.PRODUCT_READINESS_ARTIFACT_STAGE }}/**',
 ] as const;
 const POST_DEPLOY_PRODUCT_SMOKE_ARTIFACT_WORKFLOW_PATH =
   '.github/workflows/post-deploy-product-smoke-artifact.yml';
@@ -454,6 +454,9 @@ function assertProductReadinessArtifactSecretsStayProcessScoped(failures: string
   if (jobEnv.PRESET_ENDPOINT_API_KEY !== '${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}') {
     failures.push(`${label} must pass PRESET_ENDPOINT_API_KEY through job env from GitHub Actions secrets`);
   }
+  if (jobEnv.PRODUCT_READINESS_ARTIFACT_STAGE !== PRODUCT_READINESS_ARTIFACT_STAGE) {
+    failures.push(`${label} must stage product readiness artifacts under runner.temp`);
+  }
   if (downloadWith.path !== PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_DIR) {
     failures.push(`${label} must download release contract input to ${PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_DIR}`);
   }
@@ -500,8 +503,12 @@ function assertProductReadinessArtifactFailureEvidenceUpload(failures: string[])
   const job = workflow?.jobs.find((entry) => entry.id === jobId);
   const steps = collectJobSteps(parseWorkflow(workflowPath), jobId);
   const handoffStep = steps.find((step) => step.name === 'Verify product readiness handoff files');
+  const stageStepIndex = steps.findIndex((step) => step.name === 'Stage product readiness artifact');
+  const uploadStepIndex = steps.findIndex((step) => step.name === 'Upload product readiness artifact');
+  const stageStep = stageStepIndex >= 0 ? steps[stageStepIndex] : undefined;
   const uploadStep = steps.find((step) => step.name === 'Upload product readiness artifact');
   const handoffRun = typeof handoffStep?.run === 'string' ? handoffStep.run : '';
+  const stageRun = typeof stageStep?.run === 'string' ? stageStep.run : '';
   const uploadWith = asRecord(uploadStep?.with);
   const uploadPaths = typeof uploadWith.path === 'string'
     ? uploadWith.path.split('\n').map((line) => line.trim()).filter(Boolean)
@@ -520,11 +527,11 @@ function assertProductReadinessArtifactFailureEvidenceUpload(failures: string[])
     assertArrayEqual(
       job.artifactPaths,
       PRODUCT_READINESS_ARTIFACT_PATHS,
-      `${label} artifact paths must upload the whole campaign evidence root and test reports`,
+      `${label} artifact paths must upload the staged campaign evidence and test reports`,
       failures,
     );
-    if (!/success-only file check/i.test(notes) || !/not a failed-run verdict/i.test(notes)) {
-      failures.push(`${label} notes must preserve success-only handoff semantics for failed-run evidence uploads`);
+    if (!/success-only file check/i.test(notes) || !/not a failed-run verdict/i.test(notes) || !/excluding runtime caches/i.test(notes)) {
+      failures.push(`${label} notes must preserve success-only handoff semantics and runtime-cache staging boundary`);
     }
   }
 
@@ -537,6 +544,29 @@ function assertProductReadinessArtifactFailureEvidenceUpload(failures: string[])
     for (const relativePath of PRODUCT_READINESS_HANDOFF_RELATIVE_PATHS) {
       if (!handoffRun.includes(`test -f "\${RELEASE_CAMPAIGN_ROOT}/${relativePath}"`)) {
         failures.push(`${label} handoff file check must require ${relativePath}`);
+      }
+    }
+  }
+
+  if (stageStep === undefined) {
+    failures.push(`${label} must stage product readiness artifacts before upload`);
+  } else {
+    if (stageStep.if !== 'always()') {
+      failures.push(`${label} artifact staging must run with if: always() so failed-run evidence can be uploaded`);
+    }
+    if (uploadStepIndex < 0 || stageStepIndex > uploadStepIndex) {
+      failures.push(`${label} artifact staging must run before upload`);
+    }
+    for (const requiredSnippet of [
+      'rsync -a --prune-empty-dirs',
+      "--exclude='**/afscp-juicefs-cache/'",
+      "--exclude='**/next-dist/'",
+      '"${PRODUCT_READINESS_ARTIFACT_STAGE}/release-runs/${RELEASE_CAMPAIGN_RUN_ID}/"',
+      'rsync -a test-results/',
+      'rsync -a playwright-report/',
+    ]) {
+      if (!stageRun.includes(requiredSnippet)) {
+        failures.push(`${label} artifact staging must include ${requiredSnippet}`);
       }
     }
   }
@@ -554,9 +584,12 @@ function assertProductReadinessArtifactFailureEvidenceUpload(failures: string[])
   assertArrayEqual(
     uploadPaths,
     PRODUCT_READINESS_ARTIFACT_PATHS,
-    `${label} artifact upload paths must include the campaign root and test report directories`,
+    `${label} artifact upload paths must include only the staged artifact directory`,
     failures,
   );
+  if (uploadPaths.includes('${{ env.RELEASE_CAMPAIGN_ROOT }}/**')) {
+    failures.push(`${label} artifact upload must not scan the live release campaign root`);
+  }
 }
 
 function assertPostDeployProductSmokeArtifactHandoff(failures: string[]): void {

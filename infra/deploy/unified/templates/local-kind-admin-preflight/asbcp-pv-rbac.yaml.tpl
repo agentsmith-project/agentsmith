@@ -17,7 +17,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: agentsmith-sandbox-control-plane-pv
+  name: agentsmith-sandbox-control-plane-pv-{{NAMESPACE}}
   labels:
     app.kubernetes.io/name: agentsmith
     app.kubernetes.io/component: asbcp

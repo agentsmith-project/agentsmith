@@ -757,7 +757,7 @@ describe('unified deploy render producer', () => {
       expect(namesByKind).not.toContain('Namespace/agentsmith');
       expect(namesByKind).not.toEqual(expect.arrayContaining([
         'ClusterRole/agentsmith-sandbox-control-plane-pv',
-        'ClusterRoleBinding/agentsmith-sandbox-control-plane-pv',
+        'ClusterRoleBinding/agentsmith-sandbox-control-plane-pv-agentsmith',
       ]));
       expect(namesByKind.some((name) => name.startsWith('ClusterRole/'))).toBe(false);
       expect(namesByKind.some((name) => name.startsWith('ClusterRoleBinding/'))).toBe(false);
@@ -806,14 +806,38 @@ describe('unified deploy render producer', () => {
   it('keeps local-kind namespace creation in a separate admin preflight render', async () => {
     const appRendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const preflightRendered = await renderUnifiedDeployPreflightFromFiles({ profile: 'local-kind' });
+    const customNamespacePreflightRendered = await renderUnifiedDeployToString({
+      profile: 'local-kind',
+      templateGroup: 'local_kind_admin_preflight',
+      siteEnv: (await readFile(DEFAULT_SITE_ENV_PATH, 'utf8')).replace(
+        /^NAMESPACE=.*$/mu,
+        'NAMESPACE=agentsmith-release-slice',
+      ),
+    });
 
     const appNames = parsedDocuments(appRendered.output).map((document) => `${resourceKind(document)}/${resourceName(document)}`);
     const preflightNames = parsedDocuments(preflightRendered.output).map((document) => `${resourceKind(document)}/${resourceName(document)}`);
+    const customPreflightDocuments = parsedDocuments(customNamespacePreflightRendered.output);
+    const customPvBinding = findResource(
+      customPreflightDocuments,
+      'ClusterRoleBinding',
+      'agentsmith-sandbox-control-plane-pv-agentsmith-release-slice',
+    );
+    const customPvBindingSubjects = Array.isArray(customPvBinding.subjects)
+      ? customPvBinding.subjects.map(asRecord)
+      : [];
 
     expect(appNames).not.toContain('Namespace/agentsmith');
     expect(preflightNames).toContain('Namespace/agentsmith');
     expect(preflightNames).toContain('ClusterRole/agentsmith-sandbox-control-plane-pv');
-    expect(preflightNames).toContain('ClusterRoleBinding/agentsmith-sandbox-control-plane-pv');
+    expect(preflightNames).toContain('ClusterRoleBinding/agentsmith-sandbox-control-plane-pv-agentsmith');
+    expect(customPvBindingSubjects).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'ServiceAccount',
+        name: 'agentsmith-sandbox-control-plane',
+        namespace: 'agentsmith-release-slice',
+      }),
+    ]));
 
     await expect(renderUnifiedDeployToString({
       profile: 'existing-cluster',
@@ -1900,7 +1924,7 @@ describe('unified deploy render producer', () => {
     const rendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const documents = parsedDocuments(rendered.output);
     const clusterRole = findResource(documents, 'ClusterRole', 'agentsmith-sandbox-control-plane-pv');
-    const clusterRoleBinding = findResource(documents, 'ClusterRoleBinding', 'agentsmith-sandbox-control-plane-pv');
+    const clusterRoleBinding = findResource(documents, 'ClusterRoleBinding', 'agentsmith-sandbox-control-plane-pv-agentsmith');
     const podSpec = deploymentPodSpec(documents, 'agentsmith-sandbox-control-plane');
 
     expect(podSpec.serviceAccountName).toBe('agentsmith-sandbox-control-plane');

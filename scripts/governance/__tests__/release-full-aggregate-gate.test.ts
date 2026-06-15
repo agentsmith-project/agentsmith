@@ -2086,6 +2086,70 @@ describe('release-full aggregate gate', () => {
     expect(terminalResult.summary).toContain('pod-manager');
   });
 
+  it('passes with complete runtime flake call summaries for release-incomplete runtime readiness', () => {
+    const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-runtime-release-incomplete-'));
+    const callSummaries = [
+      {
+        source: 'api',
+        call: 'delete_workspace_binding',
+        request_id: 'release:begin:unspecified',
+        workload_id: 'task-476aa53b08af467da0b03fce2a5a1a78',
+        phase: 'unknown',
+        status_code: '409',
+        error_code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      },
+      {
+        source: 'pod_manager',
+        call: 'delete_workspace_binding',
+        request_id: 'release:begin:unspecified',
+        workload_id: 'task-476aa53b08af467da0b03fce2a5a1a78',
+        phase: 'unknown',
+        status_code: '409',
+        error_code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      },
+      {
+        source: 'asbcp_create_status',
+        call: 'delete_workspace_binding',
+        request_id: 'release:begin:unspecified',
+        workload_id: 'task-476aa53b08af467da0b03fce2a5a1a78',
+        phase: 'unknown',
+        status_code: '409',
+        error_code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      },
+    ];
+    seedPassedCampaign(campaignRoot);
+    writeJson(
+      resolve(
+        campaignRoot,
+        'gate-release',
+        'child-internal-evidence',
+        'files_restore_continuation_spec',
+        'runtime-readiness-details.json',
+      ),
+      {
+        schema_version: 'agentsmith.runtime-readiness-details/v1',
+        theme: 'runtime_pending_readiness',
+        generated_at: '2026-06-15T07:32:14.554Z',
+        convergence_policy: runtimeReadinessPolicyEvidence(),
+        classification_rules: runtimeReadinessPolicy.classification_rules,
+        classification: 'runtime_flake',
+        outcome: 'focused_gate_passed_after_runtime_readiness_marker',
+        signals: callSummaries,
+        call_summaries: callSummaries,
+        k8s_pods: [],
+      },
+    );
+    writeCampaignEvidencePointer(campaignRoot, getCampaignStep('gate-release'));
+
+    runAggregate(campaignRoot);
+
+    const terminalResult = readTerminalResult(campaignRoot);
+    expect(terminalResult).toMatchObject({
+      status: 'passed',
+      failure_class: 'none',
+    });
+  });
+
   it('fails when runtime readiness evidence is a stability blocker', () => {
     const campaignRoot = mkdtempSync(join(tmpdir(), 'release-full-runtime-stability-blocker-'));
     const runtimeBlockerCallSummaries = [

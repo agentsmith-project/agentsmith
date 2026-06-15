@@ -199,6 +199,73 @@ describe('runtime readiness details evidence', () => {
     ]);
   });
 
+  it('derives complete owner call summaries from release-incomplete runtime failure diagnostics', () => {
+    const report = buildRuntimeReadinessDetails({
+      generatedAt: '2026-06-15T07:32:14.554Z',
+      podStatusText: '',
+      logFiles: [
+        {
+          path: '/tmp/api.log',
+          content: [
+            '{"time":"2026-06-15T07:31:53.407844895Z","level":"INFO","message":"request handled","event":"afscp.request","correlation_id":"38481df2-3c4e-415a-8945-9766e0c48bea","method":"POST","operation_id":"releaseWorkloadMountBinding","path":"/internal/v1/workload-mount-bindings/wmb_52b2c56169c8fedde309:release","route":"/internal/v1/workload-mount-bindings/{mountBindingId}:release","status":202}',
+            '[files] runtime_pending_readiness_failure {"event":"runtime_pending_readiness_failure","theme":"runtime_pending_readiness","scope":"file_library_runtime_access_release","diagnostic":{"theme":"runtime_pending_readiness","workspace_id":"ws_default","project_id":"proj_1781508527084_59878","file_library_id":"flib_f11aff0e07ff","task_id":"task_476aa53b08af467da0b03fce2a5a1a78","workload_id":"task-476aa53b08af467da0b03fce2a5a1a78","request_id":"release:begin:unspecified","operation":"delete_workspace_binding","error_code":"AGENT_SANDBOX_RELEASE_INCOMPLETE","mapped_error_code":"FILE_LIBRARY_RETRYABLE_INFRASTRUCTURE_CONFLICT","mapped_message":"file_library_retryable_infrastructure_conflict","status":409,"retryable":true}}',
+          ].join('\n'),
+        },
+        {
+          path: '/tmp/asbcp.log',
+          content: '2026/06/15 07:31:56 workspacebinding/wmb_52b2c56169c8fedde309: AFSCP mount reference unavailable before release: workspace=ws_default project=proj_1781508527084_59878 request_id=ca3a6987-f5c2-4ba0-9c02-befa21691354 correlation_id=ca3a6987-f5c2-4ba0-9c02-befa21691354 error=workspace binding release fact write failed\n',
+        },
+      ],
+    });
+
+    expect(report.call_summaries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'api',
+        call: 'releaseWorkloadMountBinding',
+        request_id: '38481df2-3c4e-415a-8945-9766e0c48bea',
+        status_code: '202',
+      }),
+      expect.objectContaining({
+        source: 'api',
+        call: 'delete_workspace_binding',
+        request_id: 'release:begin:unspecified',
+        workload_id: 'task-476aa53b08af467da0b03fce2a5a1a78',
+        phase: 'unknown',
+        status_code: '409',
+        error_code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      }),
+      expect.objectContaining({
+        source: 'pod_manager',
+        call: 'delete_workspace_binding',
+        request_id: 'release:begin:unspecified',
+        workload_id: 'task-476aa53b08af467da0b03fce2a5a1a78',
+        phase: 'unknown',
+        status_code: '409',
+        error_code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+        evidence: 'derived_from_runtime_failure_diagnostic',
+      }),
+      expect.objectContaining({
+        source: 'asbcp_create_status',
+        call: 'delete_workspace_binding',
+        request_id: 'release:begin:unspecified',
+        workload_id: 'task-476aa53b08af467da0b03fce2a5a1a78',
+        phase: 'unknown',
+        status_code: '409',
+        error_code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+        evidence: 'derived_from_runtime_failure_diagnostic',
+      }),
+    ]));
+    expect(report.failure).toEqual(expect.objectContaining({
+      source: 'asbcp_create_status',
+      error_code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      phase: 'unknown',
+    }));
+    expect(report.pod_manager_summary).toEqual(expect.objectContaining({
+      source: 'pod_manager',
+      error_code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+    }));
+  });
+
   it('keeps upstream errors with sandbox diagnostics visible as runtime readiness evidence', () => {
     const diagnostic = {
       event: 'runtime_pending_readiness_failure',

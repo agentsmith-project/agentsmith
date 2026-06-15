@@ -44,13 +44,19 @@ function normalizeKey(key) {
 
 function readFields(line) {
   const fields = {};
-  const pattern = /\b(request_id|requestId|workload_id|workloadId|phase|status|http_status|httpStatus|status_code|statusCode|error_code|errorCode|code|asbcp_code|asbcpCode|pod_name|podName|retryable|operation|call|readiness_reason|readinessReason|readiness_message|readinessMessage|retry_after|retryAfter)=("[^"]*"|'[^']*'|[^\s,;]+)/gu;
+  const pattern = /\b(request_id|requestId|correlation_id|correlationId|workload_id|workloadId|phase|status|http_status|httpStatus|status_code|statusCode|error_code|errorCode|code|asbcp_code|asbcpCode|pod_name|podName|retryable|operation|operation_id|operationId|call|readiness_reason|readinessReason|readiness_message|readinessMessage|retry_after|retryAfter)=("[^"]*"|'[^']*'|[^\s,;]+)/gu;
   for (const match of line.matchAll(pattern)) {
     const rawValue = match[2] ?? '';
     fields[normalizeKey(match[1] ?? '')] = rawValue.replace(/^["']|["']$/g, '');
   }
+  if (fields.correlation_id && !fields.request_id) {
+    fields.request_id = fields.correlation_id;
+  }
   if (fields.code && !fields.error_code) {
     fields.error_code = fields.code;
+  }
+  if (fields.operation_id && !fields.operation) {
+    fields.operation = fields.operation_id;
   }
   if (fields.operation && !fields.call) {
     fields.call = fields.operation;
@@ -72,6 +78,9 @@ function readFields(line) {
   }
   if (/AGENT_SANDBOX_UNAVAILABLE/u.test(line) && !fields.error_code) {
     fields.error_code = 'AGENT_SANDBOX_UNAVAILABLE';
+  }
+  if (/AGENT_SANDBOX_RELEASE_INCOMPLETE/u.test(line) && !fields.error_code) {
+    fields.error_code = 'AGENT_SANDBOX_RELEASE_INCOMPLETE';
   }
   if (/FailedScheduling/u.test(line) && !fields.error_code) {
     fields.error_code = 'FailedScheduling';
@@ -98,6 +107,9 @@ function classifySource(line) {
   if (/asbcp_workload_status|ASBCP|create\/status/u.test(line)) {
     return 'asbcp_create_status';
   }
+  if (/workspacebinding\/|AFSCP mount reference unavailable before release/u.test(line)) {
+    return 'asbcp_create_status';
+  }
   if (/\bAPI\b|\bapi\b/u.test(line)) {
     return 'api';
   }
@@ -120,6 +132,10 @@ function readCall(line, source) {
     'releaseWorkloadMountBinding',
     'revokeWorkloadMountBinding',
     'delete_workspace_binding',
+    'createExport',
+    'revokeExport',
+    'getOperation',
+    'updateWorkloadMountBindingStatus',
   ];
   const found = calls.find((call) => line.includes(call));
   if (found) {
@@ -130,6 +146,9 @@ function readCall(line, source) {
   }
   if (source === 'asbcp_create_status' && /asbcp_workload_status/u.test(line)) {
     return 'workload_status';
+  }
+  if (source === 'asbcp_create_status' && /workspacebinding\/|AFSCP mount reference unavailable before release/u.test(line)) {
+    return 'releaseWorkloadMountBinding';
   }
   return undefined;
 }
@@ -258,6 +277,7 @@ function addSignal(signals, seen, input) {
       errorCode === 'AGENT_SANDBOX_UNAVAILABLE'
       || errorCode === 'AGENT_SANDBOX_STARTUP_TIMEOUT'
       || errorCode === 'AGENT_SANDBOX_RATE_LIMITED'
+      || errorCode === 'AGENT_SANDBOX_RELEASE_INCOMPLETE'
       || errorCode === 'FailedScheduling'
       || errorCode === 'pod_unschedulable'
       || errorCode === 'workspace_pvc_unbound'
@@ -277,12 +297,113 @@ function addSignal(signals, seen, input) {
   if (!signal.source) {
     return;
   }
+  if (Object.keys(signal).every((key) => key === 'source' || key === 'source_log' || key === 'line_number')) {
+    return;
+  }
   const key = JSON.stringify(signal);
   if (seen.has(key)) {
     return;
   }
   seen.add(key);
   signals.push(signal);
+}
+
+function appendAfscpRequestJsonSignal(line, sourceLog, lineNumber, signals, seen) {
+  const parsed = readJsonPayload(line);
+  if (!parsed || typeof parsed !== 'object' || parsed.event !== 'afscp.request') {
+    return false;
+  }
+  const operation = stringValue(parsed.operation_id)
+    ?? stringValue(parsed.operationId)
+    ?? stringValue(parsed.operation);
+  if (!operation) {
+    return false;
+  }
+  addSignal(signals, seen, {
+    source: 'api',
+    source_log: sourceLog,
+    line_number: lineNumber,
+    call: operation,
+    operation,
+    request_id: parsed.correlation_id ?? parsed.correlationId ?? parsed.request_id ?? parsed.requestId,
+    status_code: parsed.status ?? parsed.status_code ?? parsed.statusCode,
+    http_status: parsed.http_status ?? parsed.httpStatus,
+  });
+  return true;
+}
+
+function buildDerivedOwnerSummary(input) {
+  const status = typeof input.diagnostic.status === 'string'
+    ? input.diagnostic.status
+    : statusTextValue(input.api.status, input.summaryStatus);
+  const statusCode = typeof input.diagnostic.status === 'number'
+    ? input.diagnostic.status
+    : statusCodeValue(
+      input.diagnostic.status_code,
+      input.diagnostic.statusCode,
+      input.api.status_code,
+      input.api.statusCode,
+      input.summaryStatusCode,
+    );
+  const phase = input.diagnostic.phase ?? input.api.phase ?? input.summaryPhase ?? (
+    input.summaryErrorCode ? 'unknown' : undefined
+  );
+  return {
+    source: input.source,
+    source_log: input.sourceLog,
+    line_number: input.lineNumber,
+    call: input.call,
+    operation: input.call,
+    outcome: input.summaryErrorCode ? 'error' : undefined,
+    request_id: input.requestId,
+    workload_id: input.workloadId,
+    phase,
+    status,
+    status_code: statusCode,
+    http_status: input.diagnostic.http_status ?? input.diagnostic.httpStatus ?? input.api.http_status ?? input.api.httpStatus,
+    error_code: input.summaryErrorCode,
+    mapped_error_code: input.diagnostic.mapped_error_code ?? input.diagnostic.mappedErrorCode,
+    retryable: input.diagnostic.retryable ?? input.api.retryable,
+    readiness_reason: input.diagnostic.readiness_reason ?? input.diagnostic.readinessReason ?? input.api.readiness_reason ?? input.api.readinessReason,
+    readiness_message: input.diagnostic.readiness_message ?? input.diagnostic.readinessMessage ?? input.api.readiness_message ?? input.api.readinessMessage,
+    retry_after: input.diagnostic.retry_after ?? input.diagnostic.retryAfter ?? input.api.retry_after ?? input.api.retryAfter,
+    evidence: 'derived_from_runtime_failure_diagnostic',
+  };
+}
+
+function appendDerivedRuntimeFailureOwnerSummaries(input) {
+  if (!input.call || !input.requestId || !input.workloadId || !input.summaryErrorCode) {
+    return;
+  }
+  if (!hasRuntimeSummaryStatus(input)) {
+    return;
+  }
+  if (input.hasPodManagerEvidence || input.hasAsbcpEvidence) {
+    return;
+  }
+  addSignal(input.signals, input.seen, buildDerivedOwnerSummary({
+    ...input,
+    source: 'pod_manager',
+  }));
+  addSignal(input.signals, input.seen, buildDerivedOwnerSummary({
+    ...input,
+    source: 'asbcp_create_status',
+  }));
+}
+
+function hasRuntimeSummaryStatus(input) {
+  return input.summaryStatus !== undefined
+    || input.summaryStatusCode !== undefined
+    || input.diagnostic.status !== undefined
+    || input.diagnostic.status_code !== undefined
+    || input.diagnostic.statusCode !== undefined
+    || input.diagnostic.http_status !== undefined
+    || input.diagnostic.httpStatus !== undefined
+    || input.api.status !== undefined
+    || input.api.status_code !== undefined
+    || input.api.statusCode !== undefined
+    || input.api.http_status !== undefined
+    || input.api.httpStatus !== undefined;
 }
 
 function appendRuntimeReadinessJsonSignals(line, sourceLog, lineNumber, signals, seen) {
@@ -335,12 +456,16 @@ function appendRuntimeReadinessJsonSignals(line, sourceLog, lineNumber, signals,
     podManagerSummary?.status_code,
     podManagerSummary?.statusCode,
   );
+  const summaryCall = diagnostic.operation
+    ?? api.operation
+    ?? podManagerSummary?.latest_operation
+    ?? podManagerSummary?.latestOperation;
   addSignal(signals, seen, {
     source: 'api',
     source_log: sourceLog,
     line_number: lineNumber,
-    call: diagnostic.operation ?? api.operation ?? podManagerSummary?.latest_operation ?? podManagerSummary?.latestOperation,
-    operation: diagnostic.operation ?? api.operation ?? podManagerSummary?.latest_operation ?? podManagerSummary?.latestOperation,
+    call: summaryCall,
+    operation: summaryCall,
     request_id: diagnostic.request_id ?? diagnostic.requestId ?? api.request_id ?? api.requestId ?? summaryRequestId,
     workload_id: diagnostic.workload_id ?? diagnostic.workloadId ?? api.workload_id ?? api.workloadId ?? summaryWorkloadId,
     phase: diagnostic.phase ?? api.phase ?? summaryPhase,
@@ -459,6 +584,23 @@ function appendRuntimeReadinessJsonSignals(line, sourceLog, lineNumber, signals,
       retry_after: step.retry_after ?? step.retryAfter,
     });
   }
+  appendDerivedRuntimeFailureOwnerSummaries({
+    signals,
+    seen,
+    sourceLog,
+    lineNumber,
+    call: summaryCall,
+    requestId: diagnostic.request_id ?? diagnostic.requestId ?? api.request_id ?? api.requestId ?? summaryRequestId,
+    workloadId: diagnostic.workload_id ?? diagnostic.workloadId ?? api.workload_id ?? api.workloadId ?? summaryWorkloadId,
+    diagnostic,
+    api,
+    summaryPhase,
+    summaryStatus,
+    summaryStatusCode,
+    summaryErrorCode,
+    hasPodManagerEvidence: Boolean(podManagerSummary) || steps.length > 0,
+    hasAsbcpEvidence: asbcpCallSummaries.length > 0,
+  });
   return true;
 }
 
@@ -472,10 +614,13 @@ export function parseRuntimeReadinessSignals(files) {
     }
     const sourceLog = path.basename(file.path);
     for (const [index, line] of content.split(/\r?\n/u).entries()) {
-      if (!/AGENT_SANDBOX_STARTUP_TIMEOUT|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|AGENT_UPSTREAM_ERROR|FailedScheduling|Insufficient cpu|pod_unschedulable|Unschedulable|workspace_pvc_unbound|readiness_reason|readinessReason|readiness_message|readinessMessage|retry_after|retryAfter|agent_runner_runtime_unavailable|asbcp_network_error|runtime_pending_readiness|request_id|requestId|workload_id|workloadId|phase|status=|http_status|httpStatus|status_code|statusCode|error_code|errorCode|code=|operation=|call=|asbcp_code|asbcpCode|pod[ _-]?manager|ASBCP|asbcp_workload_status|create_or_ensure_pod|get_pod_status|create_terminal_session_failed|pending|releasing|offline|not_found/u.test(line)) {
+      if (!/AGENT_SANDBOX_STARTUP_TIMEOUT|AGENT_SANDBOX_UNAVAILABLE|AGENT_SANDBOX_RATE_LIMITED|AGENT_SANDBOX_RELEASE_INCOMPLETE|AGENT_UPSTREAM_ERROR|FailedScheduling|Insufficient cpu|pod_unschedulable|Unschedulable|workspace_pvc_unbound|readiness_reason|readinessReason|readiness_message|readinessMessage|retry_after|retryAfter|agent_runner_runtime_unavailable|asbcp_network_error|runtime_pending_readiness|request_id|requestId|correlation_id|correlationId|workload_id|workloadId|phase|status=|"status"\s*:|http_status|httpStatus|status_code|statusCode|error_code|errorCode|code=|operation=|operation_id|operationId|call=|asbcp_code|asbcpCode|pod[ _-]?manager|ASBCP|asbcp_workload_status|createWorkloadMountBinding|getWorkloadMountBinding|releaseWorkloadMountBinding|revokeWorkloadMountBinding|updateWorkloadMountBindingStatus|delete_workspace_binding|workspacebinding\/|create_or_ensure_pod|get_pod_status|create_terminal_session_failed|pending|releasing|offline|not_found/u.test(line)) {
         continue;
       }
       if (appendRuntimeReadinessJsonSignals(line, sourceLog, index + 1, signals, seen)) {
+        continue;
+      }
+      if (appendAfscpRequestJsonSignal(line, sourceLog, index + 1, signals, seen)) {
         continue;
       }
       const source = classifySource(line);

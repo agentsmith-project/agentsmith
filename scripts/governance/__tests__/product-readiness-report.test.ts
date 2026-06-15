@@ -677,6 +677,57 @@ describe('product readiness report producer', () => {
     }
   });
 
+  it('accepts runtime flake evidence for release-incomplete readiness with complete owner summaries', () => {
+    const { root } = preparePassedCampaign('agentsmith-product-readiness-report-runtime-release-incomplete-');
+    const callSummaries = [
+      {
+        source: 'api',
+        call: 'delete_workspace_binding',
+        request_id: 'release:begin:unspecified',
+        workload_id: 'task-476aa53b08af467da0b03fce2a5a1a78',
+        phase: 'unknown',
+        status_code: '409',
+        error_code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      },
+      {
+        source: 'pod_manager',
+        call: 'delete_workspace_binding',
+        request_id: 'release:begin:unspecified',
+        workload_id: 'task-476aa53b08af467da0b03fce2a5a1a78',
+        phase: 'unknown',
+        status_code: '409',
+        error_code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      },
+      {
+        source: 'asbcp_create_status',
+        call: 'delete_workspace_binding',
+        request_id: 'release:begin:unspecified',
+        workload_id: 'task-476aa53b08af467da0b03fce2a5a1a78',
+        phase: 'unknown',
+        status_code: '409',
+        error_code: 'AGENT_SANDBOX_RELEASE_INCOMPLETE',
+      },
+    ];
+    try {
+      writeRuntimeReadinessDetails(root, {
+        signals: callSummaries,
+        call_summaries: callSummaries,
+      });
+
+      const result = writeProductReadinessReport({ campaignRoot: root });
+
+      const report = readJson<ProductReadinessReport>(result.outputPath);
+      expect(report.runtime_readiness.files_restore_continuation).toMatchObject({
+        classification: 'runtime_flake',
+        outcome: 'focused_gate_passed_after_runtime_readiness_marker',
+        signals_count: 3,
+        call_summaries_count: 3,
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('fails fast when runtime readiness evidence is a stability blocker', () => {
     const { root } = preparePassedCampaign('agentsmith-product-readiness-report-runtime-blocker-');
     try {

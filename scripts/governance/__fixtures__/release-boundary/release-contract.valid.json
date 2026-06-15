@@ -23,8 +23,8 @@
     },
     {
       "id": "asbcp",
-      "image": "ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.20@sha256:752f7c782744fcb74f7c5ac95ed5a47cfea3b2c71f42644709b8dddd5eda2a10",
-      "digest": "sha256:752f7c782744fcb74f7c5ac95ed5a47cfea3b2c71f42644709b8dddd5eda2a10"
+      "image": "ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.21@sha256:42a88912980d1c362a81084844aeb4c6ad799077e9ab94df69f5be4e1bae9052",
+      "digest": "sha256:42a88912980d1c362a81084844aeb4c6ad799077e9ab94df69f5be4e1bae9052"
     }
   ],
   "release_kit_prerequisite_images": [
@@ -96,20 +96,20 @@
     },
     {
       "id": "asbcp",
-      "image": "ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.20@sha256:752f7c782744fcb74f7c5ac95ed5a47cfea3b2c71f42644709b8dddd5eda2a10",
-      "digest": "sha256:752f7c782744fcb74f7c5ac95ed5a47cfea3b2c71f42644709b8dddd5eda2a10",
+      "image": "ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane:v2.0.21@sha256:42a88912980d1c362a81084844aeb4c6ad799077e9ab94df69f5be4e1bae9052",
+      "digest": "sha256:42a88912980d1c362a81084844aeb4c6ad799077e9ab94df69f5be4e1bae9052",
       "source": "adopted_provider_images",
       "source_provenance": {
         "producer_repo": "github.com/agentsmith-project/agentsmith-sandbox-control-plane",
         "normalized_remote": "github.com/agentsmith-project/agentsmith-sandbox-control-plane",
-        "commit_sha": "54af68bc4c211d8427b7a5e92fdc102af492a727",
-        "run_id": "27479192921",
+        "commit_sha": "38a7cfebdd0e544ba2b45da579d5b2c1a566eed9",
+        "run_id": "27521416996",
         "run_attempt": "1",
-        "run_url": "https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/actions/runs/27479192921/attempts/1",
+        "run_url": "https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/actions/runs/27521416996/attempts/1",
         "subject_name": "agentsmith-sandbox-control-plane-image",
-        "artifact_uri": "gh-artifact://agentsmith-project/agentsmith-sandbox-control-plane/27479192921/agentsmith-sandbox-control-plane-image.oci",
-        "tag": "v2.0.20",
-        "artifact_sha256": "sha256:752f7c782744fcb74f7c5ac95ed5a47cfea3b2c71f42644709b8dddd5eda2a10"
+        "artifact_uri": "gh-artifact://agentsmith-project/agentsmith-sandbox-control-plane/27521416996/agentsmith-sandbox-control-plane-image.oci",
+        "tag": "v2.0.21",
+        "artifact_sha256": "sha256:42a88912980d1c362a81084844aeb4c6ad799077e9ab94df69f5be4e1bae9052"
       }
     },
     {
@@ -268,7 +268,7 @@
     "normalized_remote": "github.com/agentsmith-project/agentsmith",
     "commit_sha": "0123456789abcdef0123456789abcdef01234567",
     "subject_name": "agentsmith-release-contract",
-    "subject_sha256": "sha256:d5d81b90dd18f23a40bc5b779ee9c701d338624aa848cabb78308ab825941523",
+    "subject_sha256": "sha256:c4fbbb477a2b288c48f5f3a4d6759fefa2304d4c9d9bfc7d5b02a79c00abed24",
     "subject_uri": "release-contract.json",
     "workflow_name": "release-contract",
     "run_id": "10001",
@@ -276,7 +276,7 @@
     "run_url": "https://github.com/agentsmith-project/agentsmith/actions/runs/10001/attempts/1",
     "job": "generate-release-contract",
     "artifact_uri": "gh-artifact://agentsmith/release-contract/10001/release-contract.json",
-    "artifact_sha256": "sha256:b801fd2eea6c732bc4f43bcaf135287ec00aaef31f4b10b87853490c903f37f4",
+    "artifact_sha256": "sha256:617108cc8ff68821abccff65a31725545b25326ba1e1511a10ee03a3012b30e4",
     "generated_at": "2026-05-23T12:00:00.000Z",
     "generator_command": "npm run contracts:check-release-boundary",
     "generator_version": "p0",

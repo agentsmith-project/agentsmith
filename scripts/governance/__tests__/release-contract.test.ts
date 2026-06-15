@@ -31,7 +31,7 @@ const AFSCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-f
 const ASBCP_PROVIDER_IMAGE_REPOSITORY = 'ghcr.io/agentsmith-project/agentsmith-sandbox-control-plane';
 const LLMUP_COMMIT_SHA = '9c8208d3a12e8070c4edb0ee07469d023cfe38ad';
 const AFSCP_COMMIT_SHA = '3dd88d885901a300c2a993653ba4da058a294247';
-const ASBCP_COMMIT_SHA = '54af68bc4c211d8427b7a5e92fdc102af492a727';
+const ASBCP_COMMIT_SHA = '38a7cfebdd0e544ba2b45da579d5b2c1a566eed9';
 const REQUIRED_DEPLOY_TEMPLATE_IMAGE_IDS = [
   'afscp',
   'agentsmith_app',
@@ -70,8 +70,8 @@ const ADOPTED_PROVIDER_IMAGES = [
   {
     id: 'asbcp',
     image:
-      `${ASBCP_PROVIDER_IMAGE_REPOSITORY}:v2.0.20@sha256:752f7c782744fcb74f7c5ac95ed5a47cfea3b2c71f42644709b8dddd5eda2a10`,
-    digest: 'sha256:752f7c782744fcb74f7c5ac95ed5a47cfea3b2c71f42644709b8dddd5eda2a10',
+      `${ASBCP_PROVIDER_IMAGE_REPOSITORY}:v2.0.21@sha256:42a88912980d1c362a81084844aeb4c6ad799077e9ab94df69f5be4e1bae9052`,
+    digest: 'sha256:42a88912980d1c362a81084844aeb4c6ad799077e9ab94df69f5be4e1bae9052',
   },
 ] as const;
 
@@ -202,13 +202,13 @@ function buildImageSourceProvenance(): CurrentReleaseImageSourceProvenanceBindin
       producer_repo: 'github.com/agentsmith-project/agentsmith-sandbox-control-plane',
       normalized_remote: 'github.com/agentsmith-project/agentsmith-sandbox-control-plane',
       commit_sha: ASBCP_COMMIT_SHA,
-      tag: 'v2.0.20',
-      run_id: '27479192921',
+      tag: 'v2.0.21',
+      run_id: '27521416996',
       run_attempt: '1',
-      run_url: 'https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/actions/runs/27479192921/attempts/1',
+      run_url: 'https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/actions/runs/27521416996/attempts/1',
       subject_name: 'agentsmith-sandbox-control-plane-image',
       artifact_uri:
-        'gh-artifact://agentsmith-project/agentsmith-sandbox-control-plane/27479192921/agentsmith-sandbox-control-plane-image.oci',
+        'gh-artifact://agentsmith-project/agentsmith-sandbox-control-plane/27521416996/agentsmith-sandbox-control-plane-image.oci',
       artifact_sha256: ADOPTED_PROVIDER_IMAGES[2].digest,
     },
     {

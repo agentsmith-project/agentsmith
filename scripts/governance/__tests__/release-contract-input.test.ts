@@ -70,16 +70,15 @@ const AFSCP_SOURCE_RUN_ATTEMPT = '1';
 const AFSCP_SOURCE_SUBJECT_NAME = 'agentsmith-fs-control-plane-image';
 const AFSCP_RELEASE_URL =
   `https://github.com/agentsmith-project/agentsmith-fs-control-plane/releases/tag/${AFSCP_VERSION}`;
-const ASBCP_VERSION = 'v2.0.20';
-const ASBCP_DIGEST = 'sha256:752f7c782744fcb74f7c5ac95ed5a47cfea3b2c71f42644709b8dddd5eda2a10';
-const ASBCP_COMMIT_SHA = '54af68bc4c211d8427b7a5e92fdc102af492a727';
-const ASBCP_SOURCE_RUN_ID = '27479192921';
+const ASBCP_VERSION = 'v2.0.21';
+const ASBCP_DIGEST = 'sha256:42a88912980d1c362a81084844aeb4c6ad799077e9ab94df69f5be4e1bae9052';
+const ASBCP_COMMIT_SHA = '38a7cfebdd0e544ba2b45da579d5b2c1a566eed9';
+const ASBCP_SOURCE_RUN_ID = '27521416996';
 const ASBCP_SOURCE_RUN_ATTEMPT = '1';
 const ASBCP_SOURCE_SUBJECT_NAME = 'agentsmith-sandbox-control-plane-image';
 const ASBCP_RELEASE_URL =
   `https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/releases/tag/${ASBCP_VERSION}`;
 const ASBCP_FINAL_MANIFEST_ASSET_NAME = 'asbcp-final-manifest.json';
-const ASBCP_BREAKING_CHANGE_ID = 'ASBCP-BC-0001';
 const MANAGED_RUNNER_SOURCE_SUBJECT_NAME = 'agentsmith-managed-runner-image';
 const REQUIRED_DEPLOY_TEMPLATE_IMAGE_IDS = [
   'afscp',
@@ -796,14 +795,11 @@ function buildAsbcpFinalManifest(): Record<string, unknown> {
       matches: true,
       source: 'fresh-empty Docker config docker pull image:tag and image:tag@build_push_digest',
     },
-    known_breaking_changes: [
-      {
-        id: ASBCP_BREAKING_CHANGE_ID,
-        summary: 'pre-GA ASBCP release evidence clean cut.',
-      },
-    ],
-    changelog_summary: 'ASBCP release evidence schema clean cut.',
-    known_risk_status: 'no release-blocking risks',
+    known_breaking_changes: [],
+    changelog_summary:
+      'Workspace binding delete now records AFSCP mount references before deleting PV/PVC storage, waits for terminal storage deletion, and marks AFSCP mount bindings released only after storage deletion reaches terminal truth.; Workspace binding release retries now persist release facts/idempotency state and return typed `workspace_binding_release_incomplete` details with retry hints for pending storage deletion or AFSCP released status convergence.',
+    known_risk_status:
+      'No release-blocking risks in docs/RISK_REGISTER.md; open non-release-blocking risks remain: R-001, R-002, R-003, R-004, R-005, R-006, R-007',
     known_risk_status_source: 'docs/RISK_REGISTER.md release_blocking column',
     runbook_url:
       `https://github.com/agentsmith-project/agentsmith-sandbox-control-plane/blob/${ASBCP_COMMIT_SHA}/docs/runbooks/release.md`,
@@ -816,6 +812,11 @@ function buildAsbcpFinalManifest(): Record<string, unknown> {
         'API contract version: v1',
         `Image ref: \`${imageRef}\``,
         `Image digest: \`${ASBCP_DIGEST}\``,
+        'Downstream image lock values:',
+        `asbcp_version=${ASBCP_VERSION}`,
+        `asbcp_source_image=${imageRef}`,
+        `asbcp_release_url=${ASBCP_RELEASE_URL}`,
+        `asbcp_commit_sha=${ASBCP_COMMIT_SHA}`,
       ].join('\n'),
       github_release_url: ASBCP_RELEASE_URL,
     },
@@ -952,7 +953,7 @@ function writeAsbcpFinalManifestSourceMetadata(
   writeCanonicalAsbcpImageLock(root);
   const dependencySourceGates = writeDependencyImageSourceGates(root);
   const metadataRoot = join(root, 'asbcp-final-manifest-source-metadata');
-  const assetId = 442105226;
+  const assetId = 447775423;
   const manifest = buildAsbcpFinalManifest();
   const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
   const manifestSha256 = sha256Digest(manifestText);
@@ -966,21 +967,21 @@ function writeAsbcpFinalManifestSourceMetadata(
     state: 'uploaded',
     size: Buffer.byteLength(manifestText, 'utf8'),
     digest: manifestSha256,
-    created_at: '2026-05-31T14:00:00.000Z',
-    updated_at: '2026-05-31T14:01:00.000Z',
+    created_at: '2026-06-15T03:05:29.000Z',
+    updated_at: '2026-06-15T03:05:30.000Z',
   };
   const metadata: AsbcpFinalManifestSourceMetadataFixture = {
     manifest,
     releaseApi: {
-      id: 336241316,
+      id: 339307453,
       tag_name: ASBCP_VERSION,
-      target_commitish: ASBCP_COMMIT_SHA,
+      target_commitish: 'main',
       name: ASBCP_VERSION,
       url: `https://api.github.com/repos/agentsmith-project/agentsmith-sandbox-control-plane/releases/tags/${ASBCP_VERSION}`,
       html_url: ASBCP_RELEASE_URL,
-      created_at: '2026-05-31T13:50:00.000Z',
-      published_at: '2026-05-31T14:02:00.000Z',
-      updated_at: '2026-05-31T14:02:00.000Z',
+      created_at: '2026-06-15T03:02:16.000Z',
+      published_at: '2026-06-15T03:05:30.000Z',
+      updated_at: '2026-06-15T03:05:30.000Z',
       assets: [assetApi],
     },
     assetApi,
@@ -2094,9 +2095,9 @@ describe('release contract CI artifact producer', () => {
       manifest_path: 'asbcp-final-manifest-source-metadata/asbcp-final-manifest.json',
       release_url: ASBCP_RELEASE_URL,
       release_tag: ASBCP_VERSION,
-      release_id: 336241316,
+      release_id: 339307453,
       release_html_url: ASBCP_RELEASE_URL,
-      asset_id: 442105226,
+      asset_id: 447775423,
       asset_name: ASBCP_FINAL_MANIFEST_ASSET_NAME,
       asset_content_type: 'application/json',
       api_asset_digest_source: 'github_release_asset.digest',

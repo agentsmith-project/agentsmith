@@ -1361,10 +1361,10 @@ describe('internal backend-real gate runtime contract', () => {
 
     expect(agentTaskGate).toContain('source "${ROOT_DIR}/scripts/lib/internal-backend-real-gate.sh"');
 
-    expect(agentTaskGate).toContain('prepare_internal_backend_real_gate_runtime');
+    expect(agentTaskGate).toContain('prepare_internal_backend_real_gate_runtime_or_record_failure');
     expect(agentTaskGate).toContain('reset_internal_afscp_local_runtime');
     expect(agentTaskGate).toContain(
-      '\ntrap cleanup EXIT\n\nensure_internal_integration_deps_for_afscp\nwait_for_internal_integration_deps_for_afscp\nensure_internal_default_workspace_for_afscp\nensure_internal_kind_cluster_for_afscp_reset\nreset_internal_afscp_local_runtime\nenable_files_restore_continuation_afscp_restore_recovery\nprepare_internal_backend_real_gate_runtime',
+      '\ntrap cleanup EXIT\n\nensure_internal_integration_deps_for_afscp\nwait_for_internal_integration_deps_for_afscp\nensure_internal_default_workspace_for_afscp\nensure_internal_kind_cluster_for_afscp_reset\nreset_internal_afscp_local_runtime\nenable_files_restore_continuation_afscp_restore_recovery\nprepare_internal_backend_real_gate_runtime_or_record_failure',
     );
     expect(agentTaskGate).toContain('ensure_internal_kind_cluster_for_afscp_reset()');
     expect(agentTaskGate).toContain('ensure_internal_default_workspace_for_afscp()');
@@ -1382,7 +1382,7 @@ describe('internal backend-real gate runtime contract', () => {
     expect(agentTaskGate).toContain('ORIGINAL_INTEGRATION_KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT:-}"');
     expect(agentTaskGate).toContain('export INTEGRATION_KEYCLOAK_PORT="${ORIGINAL_INTEGRATION_KEYCLOAK_PORT}"');
     expect(agentTaskGate.indexOf('trap cleanup EXIT')).toBeLessThan(
-      agentTaskGate.indexOf('prepare_internal_backend_real_gate_runtime'),
+      agentTaskGate.indexOf('prepare_internal_backend_real_gate_runtime_or_record_failure || exit "$?"'),
     );
     expect(agentTaskGate).toContain('export RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-managed_runner}"');
     expect(agentTaskGate).not.toContain('RUNTIME_RUNNER_MODES="${RUNTIME_RUNNER_MODES:-external_host');
@@ -1470,6 +1470,67 @@ describe('internal backend-real gate runtime contract', () => {
     expect(reclaimSpec).not.toContain('stop-cleaner');
     expect(reclaimSpec).not.toContain('run-cleaner-once');
     expect(developmentGuide).not.toContain('sandbox-cleaner');
+  });
+
+  it('classifies internal runtime preparation failures as infra dependency readiness blockers', () => {
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+    const fixtureRoot = mkdtempSync(path.join(os.tmpdir(), 'internal-runtime-preflight-classification-'));
+    const runnerPath = path.join(fixtureRoot, 'runner.sh');
+
+    try {
+      writeFileSync(
+        runnerPath,
+        [
+          '#!/usr/bin/env bash',
+          'set -euo pipefail',
+          `INTERNAL_REAL_DIR="${fixtureRoot}/internal"`,
+          'mkdir -p "${INTERNAL_REAL_DIR}"',
+          'gate_record_failure() {',
+          '  printf "failure:%s|%s|%s\\n" "${2:-}" "${3:-}" "${4:-}"',
+          '}',
+          'prepare_internal_backend_real_gate_runtime() {',
+          '  printf "Error response from daemon: write /var/lib/docker/tmp/x: no space left on device\\n" >&2',
+          '  return 28',
+          '}',
+          'df() {',
+          '  printf "Filesystem Size Used Avail Use%% Mounted on\\n"',
+          '  return 0',
+          '}',
+          'docker() {',
+          '  if [[ "${1:-}" == "system" && "${2:-}" == "df" ]]; then',
+          '    printf "TYPE TOTAL ACTIVE SIZE RECLAIMABLE\\n"',
+          '    return 0',
+          '  fi',
+          '  return 1',
+          '}',
+          shellFunctionDefinition(agentTaskGate, 'collect_internal_runtime_preflight_diagnostics'),
+          shellFunctionDefinition(agentTaskGate, 'prepare_internal_backend_real_gate_runtime_or_record_failure'),
+          'set +e',
+          'prepare_internal_backend_real_gate_runtime_or_record_failure',
+          'status=$?',
+          'set -e',
+          'printf "status=%s\\n" "${status}"',
+          'printf "diagnostics:\\n"',
+          'cat "${INTERNAL_REAL_DIR}/docker-capacity-diagnostics.txt"',
+          'exit 0',
+          '',
+        ].join('\n'),
+      );
+
+      const result = spawnSync('bash', [runnerPath], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toContain('no space left on device');
+      expect(result.stdout).toContain('failure:infra_dependency_unready|internal_runtime_preflight|internal backend-real runtime preparation failed with status 28');
+      expect(result.stdout).toContain('status=28');
+      expect(result.stdout).toContain('# /var/lib/docker capacity');
+      expect(result.stdout).toContain('# Docker system capacity');
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
   });
 
   it('starts the internal Agent Task gate without duplicating AFSCP stop before reset', () => {
@@ -2982,7 +3043,7 @@ describe('internal backend-real gate runtime contract', () => {
       + 'ensure_internal_kind_cluster_for_afscp_reset\n'
       + 'reset_internal_afscp_local_runtime\n'
       + 'enable_files_restore_continuation_afscp_restore_recovery\n'
-      + 'prepare_internal_backend_real_gate_runtime',
+      + 'prepare_internal_backend_real_gate_runtime_or_record_failure',
     );
     expect(agentTaskGate).not.toContain('AFSCP_JVS_DIRECT_RESTORE_BINARY_SHA256="');
     expect(agentTaskGate).not.toContain('AFSCP_JVS_DIRECT_RESTORE_SOURCE_REF="');

@@ -204,16 +204,35 @@ run_real_cmd() {
   local web_port="$2"
   shift 2
   local command="$*"
+  local child_internal_real_dir="${CHILD_INTERNAL_EVIDENCE_DIR}/internal-gate-${api_port}"
   cleanup_gate_ports "${api_port}" "${web_port}" "${command}"
   info "INTEGRATION_API_PORT=${api_port} INTEGRATION_WEB_PORT=${web_port} PRESET_ENDPOINT_API_KEY=<redacted> ${command}"
   (
     cd "${ROOT_DIR}"
+    mkdir -p "${child_internal_real_dir}"
     export INTEGRATION_API_PORT="${api_port}"
     export INTEGRATION_WEB_PORT="${web_port}"
     export PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY_VALUE}"
+    export INTERNAL_REAL_DIR="${child_internal_real_dir}"
     export INTERNAL_REAL_CHILD_EVIDENCE_DIR="${CHILD_INTERNAL_EVIDENCE_DIR}"
     eval "${command}"
   )
+}
+
+release_child_infra_failure_classification() {
+  local failure_file classification
+  [[ -d "${CHILD_INTERNAL_EVIDENCE_DIR:-}" ]] || return 1
+  failure_file="$(
+    find "${CHILD_INTERNAL_EVIDENCE_DIR}" -path '*/failure-classification.json' -type f -printf '%T@ %p\n' 2>/dev/null \
+      | sort -nr \
+      | awk 'NR == 1 { sub(/^[^ ]+ /, ""); print }'
+  )"
+  [[ -n "${failure_file}" ]] || return 1
+  classification="$(
+    node -e 'const fs = require("node:fs"); const file = process.argv[1]; try { const payload = JSON.parse(fs.readFileSync(file, "utf8")); const value = typeof payload.classification === "string" ? payload.classification.trim() : ""; if (["infra_dependency_unready", "identity_bootstrap_failed", "runner_launch_failed", "environment_conflict"].includes(value)) process.stdout.write(value); } catch {}' "${failure_file}"
+  )"
+  [[ -n "${classification}" ]] || return 1
+  printf '%s\n' "${classification}"
 }
 
 run_release_gate_step() {
@@ -230,7 +249,13 @@ run_release_gate_step() {
   set -e
 
   if [[ "${status}" -ne 0 ]]; then
-    gate_record_failure "${LOCAL_READY_LOG_DIR}" "scenario_assertion_failed" "${stage}" "${message}"
+    local child_classification
+    child_classification="$(release_child_infra_failure_classification || true)"
+    if [[ -n "${child_classification}" ]]; then
+      gate_record_failure "${LOCAL_READY_LOG_DIR}" "${child_classification}" "${stage}" "${message}"
+    else
+      gate_record_failure "${LOCAL_READY_LOG_DIR}" "scenario_assertion_failed" "${stage}" "${message}"
+    fi
     exit "${status}"
   fi
 }

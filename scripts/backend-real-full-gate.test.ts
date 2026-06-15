@@ -339,6 +339,8 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(script).toContain(
       'CHILD_INTERNAL_EVIDENCE_DIR="${RELEASE_REAL_CHILD_INTERNAL_EVIDENCE_DIR:-$(dirname "${LOCAL_READY_LOG_DIR}")/child-internal-evidence}"',
     );
+    expect(runRealCommand).toContain('local child_internal_real_dir="${CHILD_INTERNAL_EVIDENCE_DIR}/internal-gate-${api_port}"');
+    expect(runRealCommand).toContain('export INTERNAL_REAL_DIR="${child_internal_real_dir}"');
     expect(runRealCommand).toContain('export INTERNAL_REAL_CHILD_EVIDENCE_DIR="${CHILD_INTERNAL_EVIDENCE_DIR}"');
     expect(script).toContain(
       'run_release_gate_step "backend_real_scenario" "Files restore continuation backend-real scenario failed: npm run test:e2e:integration:files:user-stories:restore-continue" run_real_cmd 21020 3121 "npm run test:e2e:integration:files:user-stories:restore-continue"',
@@ -1041,9 +1043,11 @@ describe('backend-real full gate runtime ownership contract', () => {
     expect(body).toContain('set +e');
     expect(body).toContain('(\n    set -e\n    "$@"\n  )');
     expect(body).toContain('"$@"');
+    expect(script).toContain('release_child_infra_failure_classification()');
+    expect(body).toContain('child_classification="$(release_child_infra_failure_classification || true)"');
+    expect(body).toContain('gate_record_failure "${LOCAL_READY_LOG_DIR}" "${child_classification}" "${stage}" "${message}"');
     expect(body).toContain('gate_record_failure "${LOCAL_READY_LOG_DIR}" "scenario_assertion_failed" "${stage}" "${message}"');
     expect(body).toContain('exit "${status}"');
-    expect(body).not.toContain('infra_dependency_unready');
     expect(script).toContain(
       'run_release_gate_step "backend_real_scenario" "backend-real focused Playwright scenarios failed: npm run backend-real:run" run_real_cmd 20050 3051 "npm run backend-real:run"',
     );
@@ -1072,6 +1076,7 @@ describe('backend-real full gate runtime ownership contract', () => {
         'set -euo pipefail',
         `ROOT_DIR="${fixtureRoot}"`,
         `LOCAL_READY_LOG_DIR="${fixtureRoot}"`,
+        `CHILD_INTERNAL_EVIDENCE_DIR="${fixtureRoot}/child-internal-evidence"`,
         'PRESET_ENDPOINT_API_KEY_VALUE="fixture-key"',
         'gate_record_failure() {',
         '  printf "%s|%s|%s\\n" "$2" "$3" "$4" >> "${LOCAL_READY_LOG_DIR}/failures.log"',
@@ -1084,6 +1089,7 @@ describe('backend-real full gate runtime ownership contract', () => {
         '  printf "%s\\n" "$*" >> "${LOCAL_READY_LOG_DIR}/info.log"',
         '}',
         shellFunctionDefinition(script, 'run_real_cmd'),
+        shellFunctionDefinition(script, 'release_child_infra_failure_classification'),
         shellFunctionDefinition(script, 'run_release_gate_step'),
         `run_release_gate_step "backend_real_scenario" "backend-real focused Playwright scenarios failed: npm run backend-real:run" run_real_cmd 20050 3051 "printf scenario-ran > '${scenarioLog}'"`,
         '',
@@ -1100,6 +1106,46 @@ describe('backend-real full gate runtime ownership contract', () => {
       );
       expect(readFileSync(cleanupLog, 'utf8')).toBe('cleanup\n');
       expect(existsSync(scenarioLog)).toBe(false);
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves child internal infra preflight classification in the release native result path', () => {
+    const script = readFileSync('scripts/backend-real-full-gate.sh', 'utf8');
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'backend-real-full-gate-child-classification-'));
+    const runnerPath = join(fixtureRoot, 'runner.sh');
+    const failureLog = join(fixtureRoot, 'failures.log');
+
+    try {
+      writeFileSync(runnerPath, [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        `LOCAL_READY_LOG_DIR="${fixtureRoot}"`,
+        `CHILD_INTERNAL_EVIDENCE_DIR="${fixtureRoot}/child-internal-evidence"`,
+        'gate_record_failure() {',
+        '  printf "%s|%s|%s\\n" "$2" "$3" "$4" >> "${LOCAL_READY_LOG_DIR}/failures.log"',
+        '}',
+        'failing_internal_preflight() {',
+        '  mkdir -p "${CHILD_INTERNAL_EVIDENCE_DIR}/internal-gate-20050"',
+        '  printf \'{"classification":"infra_dependency_unready","stage":"internal_runtime_preflight","message":"Error response from daemon: write /var/lib/docker/tmp/x: no space left on device"}\\n\' > "${CHILD_INTERNAL_EVIDENCE_DIR}/internal-gate-20050/failure-classification.json"',
+        '  return 42',
+        '}',
+        shellFunctionDefinition(script, 'release_child_infra_failure_classification'),
+        shellFunctionDefinition(script, 'run_release_gate_step'),
+        'run_release_gate_step "backend_real_scenario" "backend-real focused Playwright scenarios failed: npm run backend-real:run" failing_internal_preflight',
+        '',
+      ].join('\n'));
+
+      const result = spawnSync('bash', [runnerPath], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(42);
+      expect(readFileSync(failureLog, 'utf8')).toBe(
+        'infra_dependency_unready|backend_real_scenario|backend-real focused Playwright scenarios failed: npm run backend-real:run\n',
+      );
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }
@@ -1174,6 +1220,7 @@ describe('backend-real full gate runtime ownership contract', () => {
         '  fi',
         '  return 0',
         '}',
+        shellFunctionDefinition(script, 'release_child_infra_failure_classification'),
         shellFunctionDefinition(script, 'run_release_gate_step'),
         shellFunctionDefinition(script, 'run_release_browser_trace_specs'),
         'run_release_gate_step "backend_real_scenario" "release browser UX trace scenarios failed" run_release_browser_trace_specs',

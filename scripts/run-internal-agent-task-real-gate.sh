@@ -1856,6 +1856,38 @@ record_child_internal_spec_failure() {
   collect_child_internal_failure_evidence "${stage}" "${spec_state_file}" "${message}" "${exit_status}" "${spec}" "${label}" "${spec_api_port}" "${spec_web_port}" || true
 }
 
+collect_internal_runtime_preflight_diagnostics() {
+  local diagnostics="${INTERNAL_REAL_DIR}/docker-capacity-diagnostics.txt"
+  mkdir -p "$(dirname "${diagnostics}")"
+  {
+    printf '# Filesystem capacity\n'
+    df -h || true
+    printf '\n# /var/lib/docker capacity\n'
+    df -h /var/lib/docker || true
+    printf '\n# Docker system capacity\n'
+    if command -v docker >/dev/null 2>&1; then
+      docker system df || true
+    else
+      printf 'docker command is not available\n'
+    fi
+  } > "${diagnostics}" 2>&1 || true
+}
+
+prepare_internal_backend_real_gate_runtime_or_record_failure() {
+  local prepare_status
+  set +e
+  prepare_internal_backend_real_gate_runtime
+  prepare_status=$?
+  if [[ "${prepare_status}" -eq 0 ]]; then
+    set -e
+    return 0
+  fi
+
+  collect_internal_runtime_preflight_diagnostics
+  gate_record_failure "${INTERNAL_REAL_DIR}" "infra_dependency_unready" "internal_runtime_preflight" "internal backend-real runtime preparation failed with status ${prepare_status}; see ${INTERNAL_REAL_DIR}/docker-capacity-diagnostics.txt"
+  return "${prepare_status}"
+}
+
 internal_spec_evidence_stage() {
   local spec="$1"
   local fallback_stage="$2"
@@ -1900,7 +1932,7 @@ ensure_internal_default_workspace_for_afscp
 ensure_internal_kind_cluster_for_afscp_reset
 reset_internal_afscp_local_runtime
 enable_files_restore_continuation_afscp_restore_recovery
-prepare_internal_backend_real_gate_runtime
+prepare_internal_backend_real_gate_runtime_or_record_failure || exit "$?"
 gate_record_preflight_check "${INTERNAL_REAL_DIR}" "kind_cluster" "passed" "${KIND_CLUSTER_NAME}"
 record_service kind_cluster ready "${KIND_CLUSTER_NAME}"
 gate_record_preflight_check "${INTERNAL_REAL_DIR}" "afscp_storage_csi" "passed" "${CSI_DRIVER}"

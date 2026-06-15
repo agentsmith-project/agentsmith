@@ -82,9 +82,9 @@ GA 只保留两类正式 verdict：
 - `use_existing`：operator 提供 PostgreSQL/pgvector、MongoDB、Redis、S3-compatible storage、Keycloak/OIDC、存储类、ingress/TLS 等连接真相。
 - `install_substrates`：release-kit 在 operator 提供的现有 Kubernetes namespace/storage/registry 前提下，安装 release-kit 自带的最小 substrate pack，并产出可被部署链消费的 substrate truth。
 
-`use_existing` 的验证语义是：release-kit 使用 operator 提供的 `agentsmith.substrate-connection.truth/v1` substrate truth 和 target prerequisites 完成 preflight、render/check、apply、rollout、route smoke 与 deployment path report。它不运行 substrate installer，不创建或修改 PostgreSQL/MongoDB/Redis/Object Storage/OIDC 等 substrates，也不消费 `install_substrates` 的 namespace-scoped installer evidence；它与 `install_substrates` 的 `kit_installed` namespace、ownership 和 evidence 隔离。
+`use_existing = external_declared` 的验证语义是：substrates 已由 operator 提供。Release-kit 只消费 operator 声明的 `agentsmith.substrate-connection.truth/v1` substrate truth、secret refs 和 target prerequisites，再完成 preflight、render/check、apply、rollout、route smoke 与 deployment path report，证明 AgentSmith 可以部署并运行在这些已有服务上。它不运行 substrate installer，不创建或修改 PostgreSQL/MongoDB/Redis/Object Storage/OIDC 等 substrates，也不消费 `install_substrates` 的 namespace-scoped installer evidence；它与 `install_substrates` 的 `kit_installed` namespace、ownership 和 evidence 隔离。
 
-Rehearsal/GA 可以使用 operator 在本地或目标环境预先安装好的 existing substrates。只要 actual deployment 绑定当前 release inputs、当前 substrate truth digest，并通过 required path report / smoke，本地 operator-provided existing substrates 就是正式 GA evidence。实际实施里，`use_existing` 通常连接外部云服务提供的 PostgreSQL/MongoDB/Redis/Object Storage/OIDC 等 substrates；这只是 operator 配置和 substrate truth 差异，不是 release-kit 或 AgentSmith 功能差异。当前 GA 不要求真实云厂商托管服务验证，也不得把它升级为 gate 或四路径矩阵外的必跑项。
+Rehearsal/GA 可以使用 operator 在本地或目标环境预先安装好的 existing substrates。只要 actual deployment 绑定当前 release inputs、当前 substrate truth digest，并通过 required path report / smoke，本地 operator-provided existing substrates 就是当前 release 的 path-level GA evidence input。实际实施里，`use_existing` 可以连接外部云服务提供的 PostgreSQL/MongoDB/Redis/Object Storage/OIDC 等 substrates；这只是 operator 配置和 substrate truth 差异，不是 release-kit 或 AgentSmith 功能差异。当前 GA 不要求真实云厂商托管服务验证，也不得把它升级为 gate 或四路径矩阵外的必跑项；文档和 verdict 不得写成已验证 cloud SaaS / managed cloud。
 
 KISS 边界：
 
@@ -110,7 +110,7 @@ GA 发布完成必须同时满足：
    - `online/install_substrates`
    - `airgap/use_existing`
    - `airgap/install_substrates`
-   同一 rehearsal/GA 的 path evidence 必须来自当前 `release_id`、git sha、operator-inputs、substrate truth digest、deployment path report 和 post-deploy smoke；旧 evidence、旧 path report、旧 smoke report 不可复用为当前 GA 通过。
+   同一 rehearsal/GA 的 path evidence 必须来自当前 `release_id`、git sha、operator-inputs、substrate truth digest、deployment path report 和 post-deploy smoke；旧 13f、其他历史 evidence、旧 path report、旧 smoke report 不可复用为当前 GA 通过。
 4. Release-kit final `ga-release-report.json` 输出 `status: pass` 且 `formal_verdict: issued`。
 5. Airgap 包可以在无公网下载前提下完成：bundle check、image archive materiality、image load、offline render check、apply、rollout、smoke。
 6. 最小功能 smoke 在部署后通过：
@@ -236,7 +236,7 @@ GA 的判定是：
 
 - 符合 prerequisites 的 Kubernetes。
 - 明确的 substrate truth。
-- `use_existing` 可以由本地 operator-provided existing substrates 或外部服务连接真相证明；不要求云厂商托管服务作为当前 GA gate。
+- `use_existing` 可以由本地 operator-provided existing substrates 或外部服务连接真相证明；不要求云厂商托管服务作为当前 GA gate。未来如果产品明确声明真实云厂商托管服务验证，需要单独云环境 evidence，不回填为当前 GA blocker。
 - digest-pinned image closure。
 - online 或 airgap artifact 消费。
 - 最小产品链路 smoke。

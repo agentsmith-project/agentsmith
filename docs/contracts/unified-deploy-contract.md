@@ -58,12 +58,15 @@ repo-local gates and evidence.
 Release-kit handoff plans must use operator-facing language for the deployment
 choice: `online` / `airgap` distribution against both substrate strategies:
 
-- `use_existing`: bind to operator-provided existing substrates through
-  substrate truth and target prerequisites. The substrates can be locally
-  installed by the operator for rehearsal/GA or external/cloud services in
-  implementation. This strategy does not run the release-kit substrate
-  installer, does not consume namespace-scoped installer evidence, and does
-  not require managed cloud service verification as a current GA gate.
+- `use_existing` = `external_declared`: bind to operator-provided existing
+  substrates. Release-kit consumes only the operator-declared
+  `agentsmith.substrate-connection.truth/v1`, secret refs, and target
+  prerequisites, then verifies AgentSmith can deploy and run on those existing
+  services. The substrates can be locally installed by the operator for the
+  current rehearsal/GA or external/cloud services in implementation. Current GA
+  does not require real managed cloud PostgreSQL, object storage, or OIDC
+  verification, and this path must not be represented as already verified
+  cloud SaaS / managed cloud evidence.
 - `install_substrates`: run the release-kit namespace-scoped installer,
   consume its generated substrate truth, and bind the deployment path to the
   installer report plus explicit operator confirmation.
@@ -79,10 +82,13 @@ compatibility alias remains internal to transition-only diagnostics and is not a
 GA operator `deployment_path`.
 
 A local actual deployment using operator-provided existing substrates is valid
-GA evidence for `use_existing` when it binds the current release inputs,
-substrate truth digest, deployment path report, and smoke evidence. Evidence
-from previous rehearsal or GA runs must not be reused for the current GA
-verdict.
+path-level GA evidence input for `use_existing` when it binds the current
+release inputs, current substrate truth digest, deployment path report, and
+smoke evidence. `use_existing` does not run the substrate installer, does not
+consume `install_substrates` namespace-scoped installer evidence, and stays
+isolated from the `kit_installed` namespace, ownership, and evidence path.
+Old 13f or other historical rehearsal/GA evidence must not be reused for the
+current GA verdict.
 
 `kind` is only an optional local substrate/rehearsal option. It is not a formal
 release target, not the production default, and cannot replace existing

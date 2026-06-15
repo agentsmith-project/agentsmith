@@ -102,7 +102,7 @@ const PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_DIR =
 const PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_PATH =
   '${{ runner.temp }}/agentsmith-product-readiness/input/agentsmith-release-contract.json';
 const PRODUCT_READINESS_ARTIFACT_STAGE =
-  '${{ runner.temp }}/agentsmith-product-readiness/artifact';
+  'artifacts/product-readiness-artifact-stage';
 const PRODUCT_READINESS_RUN_COMMAND =
   'npm run product:ready -- --release-contract "${RELEASE_CONTRACT_INPUT_PATH}"';
 const PRODUCT_READINESS_CHECKOUT_INPUT_PATH = 'artifacts/product-readiness/input';
@@ -2182,7 +2182,9 @@ describe('current workflow governance', () => {
     ]);
     expect(asRecord(parsedWorkflow.permissions)).toEqual({ contents: 'read', packages: 'write' });
     expect(runCommands).toContain(RUNNER_CONTRACT_BUILD_COMMAND);
-    expect(runCommands).toContain('docker push "${APP_RELEASE_REF}"');
+    expect(runCommands).toContain('push_image_with_retry "${CONTENT_REF}"');
+    expect(runCommands).toContain('push_image_with_retry "${APP_RELEASE_REF}"');
+    expect(runCommands).toContain('push_image_with_retry "${APP_SHA_REF}"');
     expect(runCommands).toContain('BUILD_ARTIFACT_BROKER_IMAGE_DIGEST_COMMAND');
     expect(runCommands).toContain('npm run release:deploy-template-package');
     expect(runCommands).toContain('release-contract-input.json');

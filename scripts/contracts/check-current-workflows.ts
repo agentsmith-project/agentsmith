@@ -73,7 +73,7 @@ const PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_DIR =
 const PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_PATH =
   '${{ runner.temp }}/agentsmith-product-readiness/input/agentsmith-release-contract.json';
 const PRODUCT_READINESS_ARTIFACT_STAGE =
-  '${{ runner.temp }}/agentsmith-product-readiness/artifact';
+  'artifacts/product-readiness-artifact-stage';
 const PRODUCT_READINESS_RUN_COMMAND =
   'npm run product:ready -- --release-contract "${RELEASE_CONTRACT_INPUT_PATH}"';
 const PRODUCT_READINESS_CHECKOUT_INPUT_PATH = 'artifacts/product-readiness/input';
@@ -455,7 +455,10 @@ function assertProductReadinessArtifactSecretsStayProcessScoped(failures: string
     failures.push(`${label} must pass PRESET_ENDPOINT_API_KEY through job env from GitHub Actions secrets`);
   }
   if (jobEnv.PRODUCT_READINESS_ARTIFACT_STAGE !== PRODUCT_READINESS_ARTIFACT_STAGE) {
-    failures.push(`${label} must stage product readiness artifacts under runner.temp`);
+    failures.push(`${label} must stage product readiness artifacts under a bounded upload staging directory`);
+  }
+  if (typeof jobEnv.PRODUCT_READINESS_ARTIFACT_STAGE === 'string' && jobEnv.PRODUCT_READINESS_ARTIFACT_STAGE.includes('runner.temp')) {
+    failures.push(`${label} artifact staging path must not use runner.temp in job env because runner context is unavailable before job dispatch`);
   }
   if (downloadWith.path !== PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_DIR) {
     failures.push(`${label} must download release contract input to ${PRODUCT_READINESS_RELEASE_CONTRACT_INPUT_DIR}`);

@@ -31,7 +31,7 @@ jobs:
       PRESET_ENDPOINT_API_KEY: ${{ secrets.PRESET_ENDPOINT_API_KEY || secrets.BACKEND_REAL_API_KEY }}
       RELEASE_CAMPAIGN_RUN_ID: product-readiness-${{ github.run_id }}
       RELEASE_CAMPAIGN_ROOT: artifacts/release-runs/product-readiness-${{ github.run_id }}
-      PRODUCT_READINESS_ARTIFACT_STAGE: ${{ runner.temp }}/agentsmith-product-readiness/artifact
+      PRODUCT_READINESS_ARTIFACT_STAGE: artifacts/product-readiness-artifact-stage
     steps:
       - name: Checkout
         uses: actions/checkout@v6

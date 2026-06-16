@@ -861,6 +861,53 @@ describe('unified deploy render producer', () => {
     });
   });
 
+  it('rejects explicit insecure system admin cookies for HTTPS public installs', async () => {
+    const httpsSiteEnv = (await readFile(DEFAULT_SITE_ENV_PATH, 'utf8'))
+      .replace(/^PUBLIC_BASE_URL=.*$/mu, 'PUBLIC_BASE_URL=https://agentsmith.example.com')
+      .replace(/^PUBLIC_API_BASE_URL=.*$/mu, 'PUBLIC_API_BASE_URL=https://agentsmith.example.com/api/v1')
+      .replace(/^RUNNER_PUBLIC_API_BASE_URL=.*$/mu, 'RUNNER_PUBLIC_API_BASE_URL=wss://agentsmith.example.com/api/v1');
+    const rendered = await renderUnifiedDeployToString({
+      profile: 'local-kind',
+      siteEnv: httpsSiteEnv,
+    });
+    const documents = parsedDocuments(rendered.output);
+    const webCookie = containerEnvEntry(
+      documents,
+      'agentsmith-web',
+      'web',
+      'SYSTEM_ADMIN_SESSION_COOKIE_SECURE',
+    );
+    webCookie.value = 'false';
+    const checkMessages = checkRenderedOutput(stringifyDocuments(documents)).failures
+      .map((failure) => failure.message)
+      .join('\n');
+
+    await expect(renderUnifiedDeployToString({
+      profile: 'local-kind',
+      siteEnv: `${httpsSiteEnv}\nSYSTEM_ADMIN_SESSION_COOKIE_SECURE=false\n`,
+    })).rejects.toThrow(
+      /SYSTEM_ADMIN_SESSION_COOKIE_SECURE must be true when PUBLIC_BASE_URL uses https/u,
+    );
+    expect(checkMessages).toContain('HTTPS system admin installs must set SYSTEM_ADMIN_SESSION_COOKIE_SECURE=true');
+  });
+
+  it('defaults system admin secure cookies to true for HTTPS public installs', async () => {
+    const rendered = await renderUnifiedDeployToString({
+      profile: 'local-kind',
+      siteEnv: (await readFile(DEFAULT_SITE_ENV_PATH, 'utf8'))
+        .replace(/^PUBLIC_BASE_URL=.*$/mu, 'PUBLIC_BASE_URL=https://agentsmith.example.com')
+        .replace(/^PUBLIC_API_BASE_URL=.*$/mu, 'PUBLIC_API_BASE_URL=https://agentsmith.example.com/api/v1')
+        .replace(/^RUNNER_PUBLIC_API_BASE_URL=.*$/mu, 'RUNNER_PUBLIC_API_BASE_URL=wss://agentsmith.example.com/api/v1'),
+    });
+    const documents = parsedDocuments(rendered.output);
+
+    expect(containerEnvEntry(documents, 'agentsmith-web', 'web', 'SYSTEM_ADMIN_SESSION_COOKIE_SECURE')).toEqual({
+      name: 'SYSTEM_ADMIN_SESSION_COOKIE_SECURE',
+      value: 'true',
+    });
+    expect(checkRenderedOutput(rendered.output).ok).toBe(true);
+  });
+
   it('keeps local-kind namespace creation in a separate admin preflight render', async () => {
     const appRendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const preflightRendered = await renderUnifiedDeployPreflightFromFiles({ profile: 'local-kind' });

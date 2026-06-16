@@ -7,7 +7,7 @@ import type { EndpointRecord, EndpointUpstreamProtocol } from './resource-models
 export interface DeploymentManagedRunnerSeedEndpointInput {
   name: string;
   baseUrl: string;
-  upstreamProtocol: EndpointUpstreamProtocol;
+  upstreamProtocol?: EndpointUpstreamProtocol;
   model: string;
   credentialName: string;
   credentialValue?: string;
@@ -40,9 +40,24 @@ export type DeploymentManagedRunnerSeedResult =
   };
 
 type SeedEnv = NodeJS.ProcessEnv | Record<string, string | undefined>;
+type ResolvedDeploymentManagedRunnerSeedEndpointInput = DeploymentManagedRunnerSeedEndpointInput & {
+  upstreamProtocol: EndpointUpstreamProtocol;
+};
+
+const DEPLOYMENT_MANAGED_RUNNER_ENDPOINT_PROTOCOLS = new Set<EndpointUpstreamProtocol>([
+  'openai_chat_completions',
+  'openai_responses',
+  'anthropic_messages',
+]);
 
 function trimmed(value: string | undefined): string {
   return value?.trim() ?? '';
+}
+
+function parseEndpointUpstreamProtocol(value: string): EndpointUpstreamProtocol | undefined {
+  return DEPLOYMENT_MANAGED_RUNNER_ENDPOINT_PROTOCOLS.has(value as EndpointUpstreamProtocol)
+    ? value as EndpointUpstreamProtocol
+    : undefined;
 }
 
 function normalizeEndpointName(value: string): string {
@@ -54,7 +69,7 @@ function normalizeCredentialName(value: string): string {
 }
 
 function endpointPayload(input: {
-  endpoint: DeploymentManagedRunnerSeedEndpointInput;
+  endpoint: ResolvedDeploymentManagedRunnerSeedEndpointInput;
   credentialId: string;
 }): Partial<EndpointRecord> {
   const model = input.endpoint.model.trim();
@@ -104,7 +119,7 @@ async function upsertOperatorEndpoint(input: {
   deps: Pick<NodeApiDeps, 'endpointResourceService'>;
   workspaceId: string;
   projectId: string;
-  endpoint: DeploymentManagedRunnerSeedEndpointInput;
+  endpoint: ResolvedDeploymentManagedRunnerSeedEndpointInput;
   credentialId: string;
 }): Promise<EndpointRecord> {
   const endpointName = normalizeEndpointName(input.endpoint.name);
@@ -142,9 +157,10 @@ export async function seedDeploymentDefaultManagedRunner(
   const actorUserId = input.actorUserId.trim() || 'system:deployment-bootstrap';
   const model = input.endpoint.model.trim();
   const baseUrl = input.endpoint.baseUrl.trim();
+  const upstreamProtocol = input.endpoint.upstreamProtocol;
   const credentialValue = input.endpoint.credentialValue?.trim() ?? '';
 
-  if (!workspaceId || !projectId || !model || !baseUrl || !input.endpoint.upstreamProtocol) {
+  if (!workspaceId || !projectId || !model || !baseUrl || !upstreamProtocol) {
     return {
       status: 'skipped',
       reason: 'operator_endpoint_config_missing',
@@ -172,7 +188,10 @@ export async function seedDeploymentDefaultManagedRunner(
     deps: input.deps,
     workspaceId,
     projectId,
-    endpoint: input.endpoint,
+    endpoint: {
+      ...input.endpoint,
+      upstreamProtocol,
+    },
     credentialId,
   });
   const modelSettingService = new AgentTaskModelSettingService(input.deps);
@@ -238,11 +257,10 @@ export function deploymentManagedRunnerSeedInputFromEnv(
         || 'deployment-agent-task',
       baseUrl: trimmed(env.DEPLOYMENT_DEFAULT_ENDPOINT_BASE_URL)
         || trimmed(env.PRESET_ANTHROPIC_ENDPOINT_BASE_URL),
-      upstreamProtocol: (
+      upstreamProtocol: parseEndpointUpstreamProtocol(
         trimmed(env.DEPLOYMENT_DEFAULT_ENDPOINT_PROTOCOL)
-        || trimmed(env.PRESET_ANTHROPIC_ENDPOINT_PROTOCOL)
-        || 'anthropic_messages'
-      ) as EndpointUpstreamProtocol,
+        || trimmed(env.PRESET_ANTHROPIC_ENDPOINT_PROTOCOL),
+      ),
       model: trimmed(env.DEPLOYMENT_DEFAULT_ENDPOINT_MODEL)
         || trimmed(env.PRESET_ENDPOINT_MODEL),
       credentialName: trimmed(env.DEPLOYMENT_DEFAULT_CREDENTIAL_NAME)

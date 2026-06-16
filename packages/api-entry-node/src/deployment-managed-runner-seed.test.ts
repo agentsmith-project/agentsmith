@@ -3,7 +3,10 @@ import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { AgentResourceService } from './agent-resource-service.js';
 import { AgentTaskModelSettingService } from './agent-task-model-setting-service.js';
-import { seedDeploymentDefaultManagedRunner } from './deployment-managed-runner-seed.js';
+import {
+  deploymentManagedRunnerSeedInputFromEnv,
+  seedDeploymentDefaultManagedRunner,
+} from './deployment-managed-runner-seed.js';
 import { EndpointResourceService } from './endpoint-resource-service.js';
 
 const RUNNER_IMAGE = `kind-registry:5000/mbos/agentsmith-managed-runner@sha256:${'a'.repeat(64)}`;
@@ -129,6 +132,32 @@ describe('seedDeploymentDefaultManagedRunner', () => {
     ).resolves.toBeNull();
     await expect(
       new AgentTaskModelSettingService(deps).getSetting('ws_default', 'proj_1'),
+    ).resolves.toBeNull();
+  });
+
+  it('skips env seeding without silently defaulting a missing upstream protocol', async () => {
+    process.env.INTERNAL_AGENT_IMAGE = RUNNER_IMAGE;
+    const deps = buildDeps();
+
+    const result = await seedDeploymentDefaultManagedRunner(deploymentManagedRunnerSeedInputFromEnv(deps, {
+      DEPLOYMENT_DEFAULT_WORKSPACE_ID: 'ws_default',
+      DEPLOYMENT_DEFAULT_PROJECT_ID: 'proj_1',
+      DEPLOYMENT_DEFAULT_ENDPOINT_NAME: 'deployment-agent-task',
+      DEPLOYMENT_DEFAULT_ENDPOINT_BASE_URL: 'https://provider.example/v1',
+      DEPLOYMENT_DEFAULT_ENDPOINT_MODEL: 'gpt-5.5',
+      DEPLOYMENT_DEFAULT_CREDENTIAL_NAME: 'deployment-agent-task-key',
+      DEPLOYMENT_DEFAULT_ENDPOINT_API_KEY: 'sk-operator-provided',
+    }));
+
+    expect(result).toEqual({
+      status: 'skipped',
+      reason: 'operator_endpoint_config_missing',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    await expect(deps.endpointResourceService.listEndpoints('ws_default', 'proj_1')).resolves.toEqual([]);
+    await expect(
+      deps.agentResourceService.getDeploymentDefaultManagedAgentRunner('ws_default', 'proj_1'),
     ).resolves.toBeNull();
   });
 });

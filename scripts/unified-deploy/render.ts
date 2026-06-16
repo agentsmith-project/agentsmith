@@ -222,6 +222,14 @@ function stripEnvQuotes(value: string): string {
   return value;
 }
 
+function publicBaseUrlUsesHttps(values: Record<string, string>): boolean {
+  try {
+    return new URL(values.PUBLIC_BASE_URL?.trim() ?? '').protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function validateEnv(values: Record<string, string>): void {
   if (Object.prototype.hasOwnProperty.call(values, 'API_REPLICAS')) {
     throw new Error('API_REPLICAS is not supported; api replicas are fixed to 1');
@@ -272,6 +280,11 @@ function validateEnv(values: Record<string, string>): void {
   ) {
     throw new Error('SYSTEM_ADMIN_SESSION_COOKIE_SECURE must be true or false');
   }
+  if (explicitSystemAdminSecureCookie === 'false') {
+    if (publicBaseUrlUsesHttps(values)) {
+      throw new Error('SYSTEM_ADMIN_SESSION_COOKIE_SECURE must be true when PUBLIC_BASE_URL uses https');
+    }
+  }
 
   for (const [key, value] of Object.entries(values)) {
     if (value.includes('"')) {
@@ -319,13 +332,7 @@ function deriveSystemAdminSessionCookieSecure(values: Record<string, string>): s
     return explicit;
   }
 
-  const publicBaseUrl = values.PUBLIC_BASE_URL?.trim() ?? '';
-  try {
-    const parsed = new URL(publicBaseUrl);
-    return parsed.protocol === 'https:' ? 'true' : 'false';
-  } catch {
-    return 'false';
-  }
+  return publicBaseUrlUsesHttps(values) ? 'true' : 'false';
 }
 
 async function withDerivedDeployEnv(options: {

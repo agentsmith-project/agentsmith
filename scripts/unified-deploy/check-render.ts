@@ -1055,6 +1055,17 @@ function checkRunnableAppWorkloads(documents: readonly Record<string, unknown>[]
       'HTTP system admin installs must set SYSTEM_ADMIN_SESSION_COOKIE_SECURE=false',
     );
   }
+  if (
+    typeof appConfigData.PUBLIC_BASE_URL === 'string'
+    && appConfigData.PUBLIC_BASE_URL.startsWith('https://')
+    && systemAdminCookieSecure !== 'true'
+  ) {
+    addFailure(
+      failures,
+      'Deployment/agentsmith-web',
+      'HTTPS system admin installs must set SYSTEM_ADMIN_SESSION_COOKIE_SECURE=true',
+    );
+  }
 
   if (stringArray(api.command).join('\0') !== 'npm') {
     addFailure(failures, 'Deployment/agentsmith-api', 'api must override the shared app image sleep command');

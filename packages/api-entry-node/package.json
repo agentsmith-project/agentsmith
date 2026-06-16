@@ -7,7 +7,7 @@
   "types": "src/index.ts",
   "scripts": {
     "prebuild": "npm run build -w @mbos/agent-runner-contract",
-    "build": "esbuild src/index.ts src/product-schema-bootstrap.ts --bundle --platform=node --format=esm --target=node24 --banner:js=\"import { createRequire } from 'node:module';const require = createRequire(import.meta.url);\" --outdir=dist --entry-names=[name] --log-level=warning",
+    "build": "esbuild src/index.ts src/product-schema-bootstrap.ts src/deployment-managed-runner-seed.ts --bundle --platform=node --format=esm --target=node24 --banner:js=\"import { createRequire } from 'node:module';const require = createRequire(import.meta.url);\" --outdir=dist --entry-names=[name] --log-level=warning",
     "pretypecheck": "npm run build -w @mbos/agent-runner-contract",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "predev": "npm run build -w @mbos/agent-runner-contract",

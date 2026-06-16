@@ -99,6 +99,16 @@ const REQUIRED_DEPLOY_ENV = [
   'INGRESS_NGINX_CONTROLLER_IMAGE',
   'INGRESS_NGINX_CERTGEN_IMAGE',
 ] as const;
+const DIGEST_PINNED_IMAGE_ENV = [
+  'WEB_IMAGE',
+  'API_IMAGE',
+  'LLMUP_IMAGE',
+  'AFSCP_IMAGE',
+  'ASBCP_IMAGE',
+  'MANAGED_RUNNER_IMAGE',
+  'INGRESS_NGINX_CONTROLLER_IMAGE',
+  'INGRESS_NGINX_CERTGEN_IMAGE',
+] as const;
 const DEFAULT_SECRET_REF_ENV = {
   AGENTSMITH_APP_REF: 'agentsmith-app-secrets',
   AFSCP_RUNTIME_REF: 'afscp-runtime-secrets',
@@ -121,6 +131,8 @@ const SECRET_NAME_PATTERN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/u;
 const SECRET_REF_REVISION_PATTERN = /^[A-Za-z0-9._:-]+$/u;
 const SECRET_NAME_MAX_LENGTH = 253;
 const AFSCP_VOLUME_REF_REVISION_SUFFIX_LENGTH = 12;
+const IMAGE_SHA256_DIGEST_PATTERN = /@sha256:([a-f0-9]{64})$/iu;
+const ZERO_SHA256_DIGEST_PATTERN = /^0{64}$/u;
 const RENDER_SUBSTRATE_REQUIRED_ENV = [
   'SUBSTRATE_POSTGRES_HOST',
   'SUBSTRATE_POSTGRES_PORT',
@@ -139,6 +151,7 @@ const RENDER_SUBSTRATE_REQUIRED_ENV = [
   'SUBSTRATE_KEYCLOAK_CLIENT_ID',
 ] as const;
 const DERIVED_INGRESS_HOST_KEY = 'INGRESS_HOST';
+const DEFAULT_SYSTEM_ADMIN_USERNAME = 'mbos-admin';
 
 const NUMERIC_ENV = new Set([
   'SUBSTRATE_POSTGRES_PORT',
@@ -219,6 +232,17 @@ function validateEnv(values: Record<string, string>): void {
     throw new Error(`missing deploy env values: ${missing.join(', ')}`);
   }
 
+  for (const key of DIGEST_PINNED_IMAGE_ENV) {
+    const value = values[key]?.trim() ?? '';
+    const digest = IMAGE_SHA256_DIGEST_PATTERN.exec(value)?.[1]?.toLowerCase();
+    if (!digest) {
+      throw new Error(`${key} must be pinned by sha256 digest`);
+    }
+    if (ZERO_SHA256_DIGEST_PATTERN.test(digest)) {
+      throw new Error(`${key} must not use a placeholder zero sha256 digest`);
+    }
+  }
+
   for (const key of NUMERIC_ENV) {
     const value = values[key];
     if (value !== undefined && !/^\d+$/u.test(value)) {
@@ -238,6 +262,15 @@ function validateEnv(values: Record<string, string>): void {
     if (!value || !SECRET_REF_REVISION_PATTERN.test(value)) {
       throw new Error(`${key} must be a non-empty non-secret revision token`);
     }
+  }
+
+  const explicitSystemAdminSecureCookie = values.SYSTEM_ADMIN_SESSION_COOKIE_SECURE;
+  if (
+    explicitSystemAdminSecureCookie !== undefined
+    && explicitSystemAdminSecureCookie !== 'true'
+    && explicitSystemAdminSecureCookie !== 'false'
+  ) {
+    throw new Error('SYSTEM_ADMIN_SESSION_COOKIE_SECURE must be true or false');
   }
 
   for (const [key, value] of Object.entries(values)) {
@@ -280,12 +313,29 @@ function deriveIngressHost(values: Record<string, string>): string {
   return derivedHost;
 }
 
+function deriveSystemAdminSessionCookieSecure(values: Record<string, string>): string {
+  const explicit = values.SYSTEM_ADMIN_SESSION_COOKIE_SECURE?.trim().toLowerCase();
+  if (explicit === 'true' || explicit === 'false') {
+    return explicit;
+  }
+
+  const publicBaseUrl = values.PUBLIC_BASE_URL?.trim() ?? '';
+  try {
+    const parsed = new URL(publicBaseUrl);
+    return parsed.protocol === 'https:' ? 'true' : 'false';
+  } catch {
+    return 'false';
+  }
+}
+
 async function withDerivedDeployEnv(options: {
   values: Record<string, string>;
 }): Promise<Record<string, string>> {
   const values = { ...DEFAULT_SECRET_REF_ENV, ...options.values };
 
   values[DERIVED_INGRESS_HOST_KEY] = deriveIngressHost(values);
+  values.SYSTEM_ADMIN_USERNAME = values.SYSTEM_ADMIN_USERNAME?.trim() || DEFAULT_SYSTEM_ADMIN_USERNAME;
+  values.SYSTEM_ADMIN_SESSION_COOKIE_SECURE = deriveSystemAdminSessionCookieSecure(values);
 
   if (!values.ASBCP_IMAGE) {
     values.ASBCP_IMAGE = await readAsbcpImageFromLock();

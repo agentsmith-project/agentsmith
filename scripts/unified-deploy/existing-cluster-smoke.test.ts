@@ -998,7 +998,7 @@ describe('unified deploy existing-cluster smoke producer', () => {
     expect(applyCalls[4]?.input).toContain('name: afscp-volume-bootstrap');
     expect(applyCalls[4]?.input).toContain('/usr/local/bin/afscp-volume-bootstrap');
     expect(applyCalls[4]?.input).toMatch(
-      /name: afscp-volume-bootstrap[\s\S]*?initContainers:\s*\n\s*- name: afscp-schema-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-migrate[\s\S]*?- --apply[\s\S]*?- --check[\s\S]*?containers:\s*\n\s*- name: afscp-volume-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-volume-bootstrap/u,
+      /name: afscp-volume-bootstrap[\s\S]*?initContainers:\s*\n\s*- name: afscp-postgresql-ready[\s\S]*?- name: afscp-schema-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-migrate[\s\S]*?- --apply[\s\S]*?- --check[\s\S]*?containers:\s*\n\s*- name: afscp-volume-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-volume-bootstrap/u,
     );
     expect(applyCalls[4]?.input).not.toContain('kind: Deployment');
     expect(applyCalls[4]?.input).not.toContain('kind: PersistentVolume');
@@ -1013,8 +1013,9 @@ describe('unified deploy existing-cluster smoke producer', () => {
     expect(applyCalls[6]?.input).toContain('name: agentsmith-api');
     expect(applyCalls[6]?.input).toContain('name: INTERNAL_AGENT_IMAGE');
     expect(applyCalls[6]?.input).toContain(
-      'value: ghcr.io/mbos/agentsmith-managed-runner@sha256:0000000000000000000000000000000000000000000000000000000000000000',
+      'value: ghcr.io/agentsmith-project/agentsmith-managed-runner:example@sha256:2222222222222222222222222222222222222222222222222222222222222222',
     );
+    expect(applyCalls[6]?.input).not.toContain('agentsmith-managed-runner@sha256:0000000000000000000000000000000000000000000000000000000000000000');
     expect(applyCalls[6]?.input).not.toContain('name: agentsmith-web-secrets');
     expect(applyCalls[6]?.input).not.toContain('DATABASE_URL: postgresql://sentinel_pg_user:sentinel_pg_secret@substrate-postgresql:5432/sentinel_pg_db');
     expect(applyCalls[6]?.input).not.toContain('MONGO_URL: mongodb://sentinel_mongo_user:sentinel_mongo_secret@substrate-mongodb:27017/admin');

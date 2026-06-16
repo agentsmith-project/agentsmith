@@ -321,6 +321,15 @@ function podSpecContainer(
     .find((item) => item.name === containerName) ?? {};
 }
 
+function podSpecContainerIndex(
+  podSpec: Record<string, unknown>,
+  containerListName: 'containers' | 'initContainers',
+  containerName: string,
+): number {
+  const containers = Array.isArray(podSpec[containerListName]) ? podSpec[containerListName] : [];
+  return containers.map(asRecord).findIndex((item) => item.name === containerName);
+}
+
 function deploymentContainerEnvFrom(
   documents: readonly Record<string, unknown>[],
   deploymentName: string,
@@ -803,6 +812,55 @@ describe('unified deploy render producer', () => {
     expect(text).toContain('Deployment/afscp-export-gateway pod template must include rendered-by=agentsmith-unified-deploy');
   });
 
+  it('rejects tag-only and placeholder runtime image refs before rendering YAML', async () => {
+    const baseSiteEnv = await readFile(DEFAULT_SITE_ENV_PATH, 'utf8');
+
+    await expect(renderUnifiedDeployToString({
+      profile: 'local-kind',
+      siteEnv: replaceEnvLine(baseSiteEnv, 'API_IMAGE', 'ghcr.io/mbos/agentsmith-app:dev'),
+    })).rejects.toThrow(/API_IMAGE must be pinned by sha256 digest/u);
+
+    await expect(renderUnifiedDeployToString({
+      profile: 'local-kind',
+      siteEnv: replaceEnvLine(
+        baseSiteEnv,
+        'MANAGED_RUNNER_IMAGE',
+        `ghcr.io/mbos/agentsmith-managed-runner@sha256:${'0'.repeat(64)}`,
+      ),
+    })).rejects.toThrow(/MANAGED_RUNNER_IMAGE must not use a placeholder zero sha256 digest/u);
+  });
+
+  it('renders explicit system admin web env and disables secure cookies for HTTP public installs', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({
+      profile: 'local-kind',
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const documents = parsedDocuments(rendered.output);
+    const config = asRecord(findResource(documents, 'ConfigMap', 'agentsmith-app-config').data);
+
+    expect(config.SYSTEM_ADMIN_USERNAME).toBe('mbos-admin');
+    expect(containerEnvEntry(documents, 'agentsmith-web', 'web', 'SYSTEM_ADMIN_USERNAME')).toMatchObject({
+      valueFrom: {
+        configMapKeyRef: {
+          name: 'agentsmith-app-config',
+          key: 'SYSTEM_ADMIN_USERNAME',
+        },
+      },
+    });
+    expect(containerEnvEntry(documents, 'agentsmith-web', 'web', 'SYSTEM_ADMIN_PASSWORD')).toMatchObject({
+      valueFrom: {
+        secretKeyRef: {
+          name: 'agentsmith-app-secrets',
+          key: 'SYSTEM_ADMIN_PASSWORD',
+        },
+      },
+    });
+    expect(containerEnvEntry(documents, 'agentsmith-web', 'web', 'SYSTEM_ADMIN_SESSION_COOKIE_SECURE')).toEqual({
+      name: 'SYSTEM_ADMIN_SESSION_COOKIE_SECURE',
+      value: 'false',
+    });
+  });
+
   it('keeps local-kind namespace creation in a separate admin preflight render', async () => {
     const appRendered = await renderUnifiedDeployFromFiles({ profile: 'local-kind' });
     const preflightRendered = await renderUnifiedDeployPreflightFromFiles({ profile: 'local-kind' });
@@ -1016,6 +1074,7 @@ describe('unified deploy render producer', () => {
     expect(apiPackage.main).toBe('dist/index.js');
     expect(apiPackage.scripts?.build).toContain('esbuild src/index.ts');
     expect(apiPackage.scripts?.build).toContain('src/product-schema-bootstrap.ts');
+    expect(apiPackage.scripts?.build).toContain('src/deployment-managed-runner-seed.ts');
     expect(apiPackage.scripts?.build).toContain('--banner:js=');
     expect(apiPackage.scripts?.build).toContain('createRequire');
     expect(apiPackage.scripts?.build).toContain('node:module');
@@ -1054,7 +1113,7 @@ describe('unified deploy render producer', () => {
     expect(messages).toContain('api:node:start must delegate to @mbos/api-entry-node start');
     expect(messages).toContain('api package start must run node dist/index.js');
     expect(messages).toContain('api package main must point to dist/index.js');
-    expect(messages).toContain('api package build must bundle src/index.ts and src/product-schema-bootstrap.ts to dist');
+    expect(messages).toContain('api package build must bundle src/index.ts, src/product-schema-bootstrap.ts, and src/deployment-managed-runner-seed.ts to dist');
     expect(messages).toContain('api package ESM bundle must inject Node createRequire for bundled CJS dependencies');
     expect(messages).toContain('Dockerfile.agentsmith-app must build the API production entrypoint');
   });
@@ -1069,7 +1128,7 @@ describe('unified deploy render producer', () => {
       },
       dockerfileText: 'RUN npm run api:node:build',
     };
-    const validBuild = 'esbuild src/index.ts src/product-schema-bootstrap.ts --bundle --platform=node --format=esm --target=node24 --banner:js="import { createRequire } from \'node:module\';const require = createRequire(import.meta.url);" --outdir=dist --entry-names=[name] --log-level=warning';
+    const validBuild = 'esbuild src/index.ts src/product-schema-bootstrap.ts src/deployment-managed-runner-seed.ts --bundle --platform=node --format=esm --target=node24 --banner:js="import { createRequire } from \'node:module\';const require = createRequire(import.meta.url);" --outdir=dist --entry-names=[name] --log-level=warning';
 
     const missingBootstrap = checkApiProductionEntrypointScripts({
       ...baseOptions,
@@ -1483,6 +1542,56 @@ describe('unified deploy render producer', () => {
         },
       ]));
       expect(volumes.some((volume) => asRecord(volume.csi).driver === 'csi.juicefs.com')).toBe(false);
+    }
+  });
+
+  it('renders deterministic PostgreSQL readiness init containers before AFSCP migrate paths', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({
+      profile: 'local-kind',
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const documents = parsedDocuments(rendered.output);
+    const appImage = deploymentContainer(documents, 'agentsmith-api', 'api').image;
+
+    const expectReadyInit = (podSpec: Record<string, unknown>, owner: string): Record<string, unknown> => {
+      const readyInit = podSpecContainer(podSpec, 'initContainers', 'afscp-postgresql-ready');
+      expect(readyInit, owner).toMatchObject({
+        name: 'afscp-postgresql-ready',
+        image: appImage,
+        command: ['node'],
+      });
+      expect(String(readyInit.image)).not.toMatch(/busybox/iu);
+      expect(readyInit.args).toEqual(expect.arrayContaining([
+        '-e',
+        expect.stringContaining('net.connect'),
+      ]));
+      expect(readyInit.env).toEqual(expect.arrayContaining([
+        {
+          name: 'AFSCP_POSTGRES_READY_HOST',
+          value: 'substrate-postgresql.agentsmith.svc.cluster.local',
+        },
+        {
+          name: 'AFSCP_POSTGRES_READY_PORT',
+          value: '5432',
+        },
+      ]));
+      return readyInit;
+    };
+
+    expectReadyInit(jobPodSpec(documents, 'afscp-schema-bootstrap'), 'schema bootstrap');
+
+    const volumePodSpec = jobPodSpec(documents, 'afscp-volume-bootstrap');
+    expectReadyInit(volumePodSpec, 'volume bootstrap');
+    expect(podSpecContainerIndex(volumePodSpec, 'initContainers', 'afscp-postgresql-ready')).toBeLessThan(
+      podSpecContainerIndex(volumePodSpec, 'initContainers', 'afscp-schema-bootstrap'),
+    );
+
+    for (const deploymentName of ['afscp-api', 'afscp-worker', 'afscp-export-gateway']) {
+      const podSpec = deploymentPodSpec(documents, deploymentName);
+      expectReadyInit(podSpec, deploymentName);
+      expect(podSpecContainerIndex(podSpec, 'initContainers', 'afscp-postgresql-ready')).toBeLessThan(
+        podSpecContainerIndex(podSpec, 'initContainers', 'afscp-schema-check'),
+      );
     }
   });
 
@@ -1950,6 +2059,29 @@ describe('unified deploy render producer', () => {
       expect(serviceTargetPort(documents, name)).toBe(nativePort);
       expect(endpointSlicePort(documents, name)).toBe(endpointPort);
     }
+  });
+
+  it('rejects selectorless substrate EndpointSlice FQDN backends in rendered output', async () => {
+    const rendered = await renderUnifiedDeployFromFiles({
+      profile: 'local-kind',
+      substrateTruthPath: join(fixturesDir, 'substrate-truth.sentinel.env'),
+    });
+    const documents = parsedDocuments(rendered.output);
+    const endpointSlice = findResource(documents, 'EndpointSlice', 'substrate-mongodb');
+    endpointSlice.addressType = 'FQDN';
+    endpointSlice.endpoints = [
+      {
+        addresses: ['mongodb.substrate.example'],
+      },
+    ];
+
+    const result = checkRenderedOutput(stringifyDocuments(documents));
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toContainEqual(expect.objectContaining({
+      path: 'EndpointSlice/substrate-mongodb',
+      message: expect.stringContaining('selectorless substrate EndpointSlice must use IPv4 or IPv6 IP addresses'),
+    }));
   });
 
   it('renders api replicas as a fixed value and does not accept API_REPLICAS input', async () => {

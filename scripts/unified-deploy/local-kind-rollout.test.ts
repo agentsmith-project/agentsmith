@@ -1265,8 +1265,8 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(result.status).toBe('failed');
     expect(result.failures).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        path: 'image-preflight:kind-registry:5000/mbos/agentsmith-app:local-kind-dev',
-        message: expect.stringContaining('local-kind image handoff must use immutable'),
+        path: 'render',
+        message: expect.stringContaining('WEB_IMAGE must be pinned by sha256 digest'),
       }),
     ]));
     expect(calls.map((call) => call.args.join(' ')).some((args) => args.includes(' apply '))).toBe(false);
@@ -1291,8 +1291,8 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(result.status).toBe('failed');
     expect(result.failures).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        path: 'image-preflight:kind-registry:5000/mbos/agentsmith-app:local-kind-dev',
-        message: expect.stringContaining('npm run test:unified-deploy:local-kind:images'),
+        path: 'render',
+        message: expect.stringContaining('WEB_IMAGE must be pinned by sha256 digest'),
       }),
     ]));
     expect(calls.map((call) => call.args.join(' ')).some((args) => args.includes(' apply '))).toBe(false);
@@ -1630,7 +1630,7 @@ describe('unified deploy local-kind live rollout producer', () => {
     expect(applyCalls[11]?.input).toContain('--ensure');
     expect(applyCalls[11]?.input).toContain('--check');
     expect(applyCalls[11]?.input).toMatch(
-      /name: afscp-volume-bootstrap[\s\S]*?initContainers:\s*\n\s*- name: afscp-schema-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-migrate[\s\S]*?- --apply[\s\S]*?- --check[\s\S]*?containers:\s*\n\s*- name: afscp-volume-bootstrap/u,
+      /name: afscp-volume-bootstrap[\s\S]*?initContainers:\s*\n\s*- name: afscp-postgresql-ready[\s\S]*?- name: afscp-schema-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-migrate[\s\S]*?- --apply[\s\S]*?- --check[\s\S]*?containers:\s*\n\s*- name: afscp-volume-bootstrap/u,
     );
     expect(applyCalls[11]?.input).toMatch(
       /name: afscp-volume-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-volume-bootstrap\s*\n\s*args:\s*\n\s*- --ensure\s*\n\s*- --check\s*\n\s*- --timeout=60s/u,

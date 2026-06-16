@@ -105,6 +105,44 @@ spec:
         runAsGroup: 65532
         fsGroup: 65532
         fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: afscp-postgresql-ready
+          image: "{{API_IMAGE}}"
+          command:
+            - node
+          args:
+            - -e
+            - |
+              const net = require("net");
+              const host = process.env.AFSCP_POSTGRES_READY_HOST;
+              const port = Number(process.env.AFSCP_POSTGRES_READY_PORT || "5432");
+              const deadline = Date.now() + 60000;
+              const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+              async function probe() {
+                while (Date.now() < deadline) {
+                  const ok = await new Promise((resolve) => {
+                    const socket = net.connect({ host, port, timeout: 2000 }, () => {
+                      socket.end();
+                      resolve(true);
+                    });
+                    socket.on("timeout", () => {
+                      socket.destroy();
+                      resolve(false);
+                    });
+                    socket.on("error", () => resolve(false));
+                  });
+                  if (ok) return;
+                  await sleep(1000);
+                }
+                console.error("AFSCP PostgreSQL is not reachable before timeout");
+                process.exit(1);
+              }
+              void probe();
+          env:
+            - name: AFSCP_POSTGRES_READY_HOST
+              value: "substrate-postgresql.{{NAMESPACE}}.svc.cluster.local"
+            - name: AFSCP_POSTGRES_READY_PORT
+              value: "5432"
       containers:
         - name: afscp-schema-bootstrap
           image: "{{AFSCP_IMAGE}}"
@@ -209,6 +247,43 @@ spec:
         fsGroup: 65532
         fsGroupChangePolicy: OnRootMismatch
       initContainers:
+        - name: afscp-postgresql-ready
+          image: "{{API_IMAGE}}"
+          command:
+            - node
+          args:
+            - -e
+            - |
+              const net = require("net");
+              const host = process.env.AFSCP_POSTGRES_READY_HOST;
+              const port = Number(process.env.AFSCP_POSTGRES_READY_PORT || "5432");
+              const deadline = Date.now() + 60000;
+              const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+              async function probe() {
+                while (Date.now() < deadline) {
+                  const ok = await new Promise((resolve) => {
+                    const socket = net.connect({ host, port, timeout: 2000 }, () => {
+                      socket.end();
+                      resolve(true);
+                    });
+                    socket.on("timeout", () => {
+                      socket.destroy();
+                      resolve(false);
+                    });
+                    socket.on("error", () => resolve(false));
+                  });
+                  if (ok) return;
+                  await sleep(1000);
+                }
+                console.error("AFSCP PostgreSQL is not reachable before timeout");
+                process.exit(1);
+              }
+              void probe();
+          env:
+            - name: AFSCP_POSTGRES_READY_HOST
+              value: "substrate-postgresql.{{NAMESPACE}}.svc.cluster.local"
+            - name: AFSCP_POSTGRES_READY_PORT
+              value: "5432"
         - name: afscp-schema-bootstrap
           image: "{{AFSCP_IMAGE}}"
           command:
@@ -278,6 +353,43 @@ spec:
         fsGroup: 65532
         fsGroupChangePolicy: OnRootMismatch
       initContainers:
+        - name: afscp-postgresql-ready
+          image: "{{API_IMAGE}}"
+          command:
+            - node
+          args:
+            - -e
+            - |
+              const net = require("net");
+              const host = process.env.AFSCP_POSTGRES_READY_HOST;
+              const port = Number(process.env.AFSCP_POSTGRES_READY_PORT || "5432");
+              const deadline = Date.now() + 60000;
+              const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+              async function probe() {
+                while (Date.now() < deadline) {
+                  const ok = await new Promise((resolve) => {
+                    const socket = net.connect({ host, port, timeout: 2000 }, () => {
+                      socket.end();
+                      resolve(true);
+                    });
+                    socket.on("timeout", () => {
+                      socket.destroy();
+                      resolve(false);
+                    });
+                    socket.on("error", () => resolve(false));
+                  });
+                  if (ok) return;
+                  await sleep(1000);
+                }
+                console.error("AFSCP PostgreSQL is not reachable before timeout");
+                process.exit(1);
+              }
+              void probe();
+          env:
+            - name: AFSCP_POSTGRES_READY_HOST
+              value: "substrate-postgresql.{{NAMESPACE}}.svc.cluster.local"
+            - name: AFSCP_POSTGRES_READY_PORT
+              value: "5432"
         - name: afscp-schema-check
           image: "{{AFSCP_IMAGE}}"
           command:
@@ -390,6 +502,43 @@ spec:
     spec:
       serviceAccountName: afscp-runtime
       initContainers:
+        - name: afscp-postgresql-ready
+          image: "{{API_IMAGE}}"
+          command:
+            - node
+          args:
+            - -e
+            - |
+              const net = require("net");
+              const host = process.env.AFSCP_POSTGRES_READY_HOST;
+              const port = Number(process.env.AFSCP_POSTGRES_READY_PORT || "5432");
+              const deadline = Date.now() + 60000;
+              const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+              async function probe() {
+                while (Date.now() < deadline) {
+                  const ok = await new Promise((resolve) => {
+                    const socket = net.connect({ host, port, timeout: 2000 }, () => {
+                      socket.end();
+                      resolve(true);
+                    });
+                    socket.on("timeout", () => {
+                      socket.destroy();
+                      resolve(false);
+                    });
+                    socket.on("error", () => resolve(false));
+                  });
+                  if (ok) return;
+                  await sleep(1000);
+                }
+                console.error("AFSCP PostgreSQL is not reachable before timeout");
+                process.exit(1);
+              }
+              void probe();
+          env:
+            - name: AFSCP_POSTGRES_READY_HOST
+              value: "substrate-postgresql.{{NAMESPACE}}.svc.cluster.local"
+            - name: AFSCP_POSTGRES_READY_PORT
+              value: "5432"
         - name: afscp-schema-check
           image: "{{AFSCP_IMAGE}}"
           securityContext:
@@ -466,6 +615,43 @@ spec:
     spec:
       serviceAccountName: afscp-runtime
       initContainers:
+        - name: afscp-postgresql-ready
+          image: "{{API_IMAGE}}"
+          command:
+            - node
+          args:
+            - -e
+            - |
+              const net = require("net");
+              const host = process.env.AFSCP_POSTGRES_READY_HOST;
+              const port = Number(process.env.AFSCP_POSTGRES_READY_PORT || "5432");
+              const deadline = Date.now() + 60000;
+              const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+              async function probe() {
+                while (Date.now() < deadline) {
+                  const ok = await new Promise((resolve) => {
+                    const socket = net.connect({ host, port, timeout: 2000 }, () => {
+                      socket.end();
+                      resolve(true);
+                    });
+                    socket.on("timeout", () => {
+                      socket.destroy();
+                      resolve(false);
+                    });
+                    socket.on("error", () => resolve(false));
+                  });
+                  if (ok) return;
+                  await sleep(1000);
+                }
+                console.error("AFSCP PostgreSQL is not reachable before timeout");
+                process.exit(1);
+              }
+              void probe();
+          env:
+            - name: AFSCP_POSTGRES_READY_HOST
+              value: "substrate-postgresql.{{NAMESPACE}}.svc.cluster.local"
+            - name: AFSCP_POSTGRES_READY_PORT
+              value: "5432"
         - name: afscp-schema-check
           image: "{{AFSCP_IMAGE}}"
           securityContext:

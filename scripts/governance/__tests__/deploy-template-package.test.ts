@@ -796,6 +796,7 @@ describe('deploy template package generator', () => {
     expect(workloads).toMatch(/name: agentsmith-product-schema-bootstrap[\s\S]*?backoffLimit: 3/u);
     expect(workloads.match(/backoffLimit: 3/gu)).toHaveLength(1);
     expect(config).toContain('${{ images.managed_runner.image }}');
+    expect(result.manifest.required_image_ids).toContain('managed_runner');
     expect(workloads).not.toContain('{{API_IMAGE}}');
     expect(workloads).not.toContain('{{WEB_IMAGE}}');
     expect(workloads).not.toContain('${{ values.MANAGED_RUNNER_IMAGE }}');
@@ -826,8 +827,11 @@ describe('deploy template package generator', () => {
 
     expect(afscp.match(/backoffLimit: 3/gu)).toHaveLength(2);
     expect(afscp).not.toContain('backoffLimit: 0');
+    expect(afscp).not.toMatch(/busybox/iu);
+    expect(afscp).toContain('name: afscp-postgresql-ready');
+    expect(afscp).toContain('image: "${{ images.agentsmith_app.image }}"');
     expect(afscp).toMatch(
-      /name: afscp-volume-bootstrap[\s\S]*?initContainers:\s*\n\s*- name: afscp-schema-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-migrate[\s\S]*?- --apply[\s\S]*?- --check[\s\S]*?containers:\s*\n\s*- name: afscp-volume-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-volume-bootstrap/u,
+      /name: afscp-volume-bootstrap[\s\S]*?initContainers:\s*\n\s*- name: afscp-postgresql-ready[\s\S]*?- name: afscp-schema-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-migrate[\s\S]*?- --apply[\s\S]*?- --check[\s\S]*?containers:\s*\n\s*- name: afscp-volume-bootstrap[\s\S]*?command:\s*\n\s*- \/usr\/local\/bin\/afscp-volume-bootstrap/u,
     );
   });
 
@@ -860,6 +864,19 @@ describe('deploy template package generator', () => {
     );
 
     expectPackageGenerationFailure(repoRoot, 'template image placeholder "{{MYSTERY_IMAGE}}" is not declared');
+  });
+
+  it('fails fast when an app template carries a literal tag-only image ref', () => {
+    const repoRoot = makeTempRoot();
+    writeFileSync(
+      join(repoRoot, 'infra/deploy/unified/templates/app/rbac.yaml.tpl'),
+      'kind: Pod\nspec:\n  containers:\n    - name: uncontrolled-sidecar\n      image: ghcr.io/mbos/uncontrolled-sidecar:dev\n',
+    );
+
+    expectPackageGenerationFailure(
+      repoRoot,
+      'template literal image ref "ghcr.io/mbos/uncontrolled-sidecar:dev" must use a release image placeholder or a sha256 digest',
+    );
   });
 
   it('repeats the same manifest and archive digests for identical input', () => {

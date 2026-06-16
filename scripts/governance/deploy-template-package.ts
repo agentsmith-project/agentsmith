@@ -58,6 +58,8 @@ const RELEASE_CONTRACT_IMAGE_PLACEHOLDER_IDS = {
   INGRESS_NGINX_CERTGEN_IMAGE: 'ingress_nginx_certgen',
   MANAGED_RUNNER_IMAGE: 'managed_runner',
 } as const satisfies Record<string, string>;
+const TEMPLATE_LITERAL_IMAGE_REF_DIGEST_PATTERN = /@sha256:([a-f0-9]{64})$/iu;
+const TEMPLATE_LITERAL_ZERO_DIGEST_PATTERN = /^0{64}$/u;
 const REQUIRED_CI_PROVENANCE_STRING_FIELDS = [
   'workflow_name',
   'run_id',
@@ -594,6 +596,7 @@ function collectRequiredImageIds(
     }
 
     const packageContent = renderReleaseKitTemplatePackageContent(sourceContent);
+    assertTemplateLiteralImageRefsSafe(packageContent);
     for (const imageId of releaseKitImageIds(packageContent)) {
       imageIds.add(imageId);
     }
@@ -640,6 +643,25 @@ function renderReleaseKitTemplatePackageContent(source: string): string {
 
     return `\${{ values.${key} }}`;
   });
+}
+
+function assertTemplateLiteralImageRefsSafe(source: string): void {
+  for (const rawLine of source.split(/\r?\n/u)) {
+    const match = /^\s*image:\s*(?:"([^"]+)"|'([^']+)'|(\S+))\s*$/u.exec(rawLine);
+    const image = match?.[1] ?? match?.[2] ?? match?.[3];
+    if (!image) {
+      continue;
+    }
+    if (image.includes('${{ images.')) {
+      continue;
+    }
+    const digest = TEMPLATE_LITERAL_IMAGE_REF_DIGEST_PATTERN.exec(image)?.[1]?.toLowerCase();
+    if (!digest || TEMPLATE_LITERAL_ZERO_DIGEST_PATTERN.test(digest)) {
+      throw new Error(
+        `template literal image ref "${image}" must use a release image placeholder or a sha256 digest`,
+      );
+    }
+  }
 }
 
 function releaseKitImageKeyForLegacyPlaceholder(key: string): string | null {

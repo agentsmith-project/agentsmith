@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { isIP } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -70,6 +71,7 @@ const AGENTSMITH_APP_SECRET_KEYS = [
   'KEYCLOAK_ADMIN_PASSWORD',
   'ASBCP_SERVICE_KEY',
   'MBOS_UNIVERSAL_PROXY_ADMIN_TOKEN',
+  'SYSTEM_ADMIN_PASSWORD',
 ] as const;
 const PRODUCT_SCHEMA_BOOTSTRAP_JOB = 'agentsmith-product-schema-bootstrap';
 const PRODUCT_SCHEMA_BOOTSTRAP_SCRIPT = 'packages/api-entry-node/dist/product-schema-bootstrap.js';
@@ -77,6 +79,7 @@ const PRODUCT_SCHEMA_BOOTSTRAP_BACKOFF_LIMIT = 3;
 const API_PACKAGE_REQUIRED_BUILD_ARGS = [
   'src/index.ts',
   'src/product-schema-bootstrap.ts',
+  'src/deployment-managed-runner-seed.ts',
   '--bundle',
   '--platform=node',
   '--format=esm',
@@ -119,6 +122,7 @@ const AFSCP_VOLUME_PVC = 'afscp-default-volume';
 const AFSCP_SCHEMA_BOOTSTRAP_JOB = 'afscp-schema-bootstrap';
 const AFSCP_VOLUME_BOOTSTRAP_JOB = 'afscp-volume-bootstrap';
 const AFSCP_SCHEMA_CHECK_INIT_CONTAINER = 'afscp-schema-check';
+const AFSCP_POSTGRES_READY_INIT_CONTAINER = 'afscp-postgresql-ready';
 const AFSCP_BOOTSTRAP_BACKOFF_LIMIT = 3;
 const AFSCP_VOLUME_STORAGE_QUANTITY = '12P';
 const AFSCP_VOLUME_ROOT_PATH = '/data/afscp/volumes/default';
@@ -220,7 +224,7 @@ export function checkApiProductionEntrypointScripts(
     addFailure(
       failures,
       'packages/api-entry-node/package.json:scripts.build',
-      'api package build must bundle src/index.ts and src/product-schema-bootstrap.ts to dist',
+      'api package build must bundle src/index.ts, src/product-schema-bootstrap.ts, and src/deployment-managed-runner-seed.ts to dist',
     );
   }
   if (!API_PACKAGE_CREATE_REQUIRE_BANNER_SNIPPETS.every((snippet) => apiBuild.includes(snippet))) {
@@ -343,6 +347,37 @@ function checkSubstrateBoundary(documents: readonly Record<string, unknown>[], f
     const selector = asRecord(asRecord(document.spec).selector);
     if (Object.keys(selector).length > 0) {
       addFailure(failures, resourceId(document), 'substrate Service binding must be selectorless');
+    }
+  }
+
+  for (const document of documents) {
+    if (resourceKind(document) !== 'EndpointSlice' || !resourceName(document).startsWith('substrate-')) {
+      continue;
+    }
+
+    const addressType = document.addressType;
+    const expectedIpVersion = addressType === 'IPv4' ? 4 : addressType === 'IPv6' ? 6 : 0;
+    if (expectedIpVersion === 0) {
+      addFailure(
+        failures,
+        resourceId(document),
+        'selectorless substrate EndpointSlice must use IPv4 or IPv6 IP addresses',
+      );
+      continue;
+    }
+
+    const endpoints = Array.isArray(document.endpoints) ? document.endpoints.map(asRecord) : [];
+    for (const endpoint of endpoints) {
+      const addresses = Array.isArray(endpoint.addresses) ? endpoint.addresses : [];
+      for (const address of addresses) {
+        if (typeof address !== 'string' || isIP(address) !== expectedIpVersion) {
+          addFailure(
+            failures,
+            resourceId(document),
+            'selectorless substrate EndpointSlice must use IPv4 or IPv6 IP addresses',
+          );
+        }
+      }
     }
   }
 }
@@ -618,6 +653,15 @@ function podSpecContainer(
   return containers
     .map(asRecord)
     .find((item) => item.name === containerName) ?? {};
+}
+
+function podSpecContainerIndex(
+  podSpec: Record<string, unknown>,
+  containerListName: 'containers' | 'initContainers',
+  containerName: string,
+): number {
+  const containers = Array.isArray(podSpec[containerListName]) ? podSpec[containerListName] : [];
+  return containers.map(asRecord).findIndex((item) => item.name === containerName);
 }
 
 function stringArray(value: unknown): string[] {
@@ -973,6 +1017,44 @@ function checkRunnableAppWorkloads(documents: readonly Record<string, unknown>[]
       addFailure(failures, 'Ingress/agentsmith', `${route} must route to agentsmith-web port 3001`);
     }
   }
+  if (typeof appConfigData.SYSTEM_ADMIN_USERNAME !== 'string' || !appConfigData.SYSTEM_ADMIN_USERNAME.trim()) {
+    addFailure(failures, 'ConfigMap/agentsmith-app-config', 'SYSTEM_ADMIN_USERNAME must be rendered for system admin login');
+  }
+  const systemAdminUsernameRef = containerConfigMapKeyRef(web, 'SYSTEM_ADMIN_USERNAME');
+  if (systemAdminUsernameRef.name !== AGENTSMITH_APP_CONFIG_MAP || systemAdminUsernameRef.key !== 'SYSTEM_ADMIN_USERNAME') {
+    addFailure(
+      failures,
+      'Deployment/agentsmith-web',
+      'web must project SYSTEM_ADMIN_USERNAME from agentsmith-app-config',
+    );
+  }
+  const systemAdminPasswordRef = containerSecretKeyRef(web, 'SYSTEM_ADMIN_PASSWORD');
+  if (systemAdminPasswordRef.name !== appSecretName(documents) || systemAdminPasswordRef.key !== 'SYSTEM_ADMIN_PASSWORD') {
+    addFailure(
+      failures,
+      'Deployment/agentsmith-web',
+      'web must project SYSTEM_ADMIN_PASSWORD from the app Secret',
+    );
+  }
+  const systemAdminCookieSecure = containerEnvValue(web, 'SYSTEM_ADMIN_SESSION_COOKIE_SECURE');
+  if (systemAdminCookieSecure !== 'true' && systemAdminCookieSecure !== 'false') {
+    addFailure(
+      failures,
+      'Deployment/agentsmith-web',
+      'web must set SYSTEM_ADMIN_SESSION_COOKIE_SECURE explicitly',
+    );
+  }
+  if (
+    typeof appConfigData.PUBLIC_BASE_URL === 'string'
+    && appConfigData.PUBLIC_BASE_URL.startsWith('http://')
+    && systemAdminCookieSecure !== 'false'
+  ) {
+    addFailure(
+      failures,
+      'Deployment/agentsmith-web',
+      'HTTP system admin installs must set SYSTEM_ADMIN_SESSION_COOKIE_SECURE=false',
+    );
+  }
 
   if (stringArray(api.command).join('\0') !== 'npm') {
     addFailure(failures, 'Deployment/agentsmith-api', 'api must override the shared app image sleep command');
@@ -1279,6 +1361,55 @@ function checkAfscpVolumeBootstrapSchemaBarrier(
   }
 }
 
+function checkAfscpPostgresqlReadyInit(
+  input: {
+    podSpec: Record<string, unknown>;
+    resourcePath: string;
+    appImage: unknown;
+    namespace: string;
+    beforeInitContainer?: string;
+    failures: CheckFailure[];
+  },
+): void {
+  const init = podSpecContainer(input.podSpec, 'initContainers', AFSCP_POSTGRES_READY_INIT_CONTAINER);
+  if (init.image !== input.appImage) {
+    addFailure(
+      input.failures,
+      input.resourcePath,
+      `${input.resourcePath} must wait for PostgreSQL with the rendered AgentSmith app image`,
+    );
+  }
+  if (String(init.image ?? '').toLowerCase().includes('busybox')) {
+    addFailure(input.failures, input.resourcePath, `${input.resourcePath} must not use BusyBox for PostgreSQL readiness`);
+  }
+  if (stringArray(init.command).join('\0') !== 'node') {
+    addFailure(input.failures, input.resourcePath, `${input.resourcePath} PostgreSQL readiness init must run node`);
+  }
+  if (
+    !stringArray(init.args).includes('-e')
+    || !stringArray(init.args).some((arg) => arg.includes('net.connect'))
+  ) {
+    addFailure(input.failures, input.resourcePath, `${input.resourcePath} PostgreSQL readiness init must perform a TCP wait`);
+  }
+  if (containerEnvValue(init, 'AFSCP_POSTGRES_READY_HOST') !== `substrate-postgresql.${input.namespace}.svc.cluster.local`) {
+    addFailure(input.failures, input.resourcePath, `${input.resourcePath} PostgreSQL readiness init must target the namespace-local substrate Service`);
+  }
+  if (containerEnvValue(init, 'AFSCP_POSTGRES_READY_PORT') !== '5432') {
+    addFailure(input.failures, input.resourcePath, `${input.resourcePath} PostgreSQL readiness init must target port 5432`);
+  }
+  if (input.beforeInitContainer) {
+    const waitIndex = podSpecContainerIndex(input.podSpec, 'initContainers', AFSCP_POSTGRES_READY_INIT_CONTAINER);
+    const migrateIndex = podSpecContainerIndex(input.podSpec, 'initContainers', input.beforeInitContainer);
+    if (waitIndex < 0 || migrateIndex < 0 || waitIndex >= migrateIndex) {
+      addFailure(
+        input.failures,
+        input.resourcePath,
+        `${input.resourcePath} PostgreSQL readiness init must run before ${input.beforeInitContainer}`,
+      );
+    }
+  }
+}
+
 function checkAfscpSchemaInitContainer(
   documents: readonly Record<string, unknown>[],
   deploymentName: string,
@@ -1424,6 +1555,7 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
   const config = asRecord(resourceByKindName(documents, 'ConfigMap', AFSCP_RUNTIME_CONFIG_MAP).data);
   const namespace = resourceNamespace(apiDeployment) || resourceNamespace(resourceByKindName(documents, 'ConfigMap', AFSCP_RUNTIME_CONFIG_MAP));
   const afscpImage = deploymentContainer(documents, 'afscp-api', 'afscp-api').image;
+  const appImage = deploymentContainer(documents, 'agentsmith-api', 'api').image;
   const expectedRuntimeSecret = afscpRuntimeSecretName(documents);
   const expectedVolumeSecret = afscpVolumeSecretName(documents);
 
@@ -1517,6 +1649,21 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
     'AFSCP default volume bootstrap',
     failures,
   );
+  checkAfscpPostgresqlReadyInit({
+    podSpec: jobPodSpec(documents, AFSCP_SCHEMA_BOOTSTRAP_JOB),
+    resourcePath: `Job/${AFSCP_SCHEMA_BOOTSTRAP_JOB}`,
+    appImage,
+    namespace,
+    failures,
+  });
+  checkAfscpPostgresqlReadyInit({
+    podSpec: jobPodSpec(documents, AFSCP_VOLUME_BOOTSTRAP_JOB),
+    resourcePath: `Job/${AFSCP_VOLUME_BOOTSTRAP_JOB}`,
+    appImage,
+    namespace,
+    beforeInitContainer: AFSCP_SCHEMA_BOOTSTRAP_JOB,
+    failures,
+  });
   checkAfscpVolumeBootstrapSchemaBarrier(documents, afscpImage, failures);
   if (stringArray(api.command).join('\0') !== '/usr/local/bin/afscp-api' || stringArray(api.args).join('\0') !== ['--serve', '--listen', '0.0.0.0:8080'].join('\0')) {
     addFailure(failures, 'Deployment/afscp-api', 'afscp-api must run the internal API server on 0.0.0.0:8080');
@@ -1535,6 +1682,14 @@ function checkAfscpContract(documents: readonly Record<string, unknown>[], failu
     if (asRecord(deploymentPodSpec(documents, deploymentName)).serviceAccountName !== AFSCP_RUNTIME_SERVICE_ACCOUNT) {
       addFailure(failures, `Deployment/${deploymentName}`, `${deploymentName} must use the dedicated AFSCP ServiceAccount`);
     }
+    checkAfscpPostgresqlReadyInit({
+      podSpec: deploymentPodSpec(documents, deploymentName),
+      resourcePath: `Deployment/${deploymentName}`,
+      appImage,
+      namespace,
+      beforeInitContainer: AFSCP_SCHEMA_CHECK_INIT_CONTAINER,
+      failures,
+    });
     checkAfscpSchemaInitContainer(documents, deploymentName, afscpImage, failures);
     checkAfscpEnvFrom(documents, deploymentName, containerName, failures);
     checkAfscpVolumeMount(documents, deploymentName, containerName, failures);

@@ -116,6 +116,18 @@ spec:
                 configMapKeyRef:
                   name: agentsmith-app-config
                   key: INTERNAL_KEYCLOAK_BASE_URL
+            - name: SYSTEM_ADMIN_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: agentsmith-app-config
+                  key: SYSTEM_ADMIN_USERNAME
+            - name: SYSTEM_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{AGENTSMITH_APP_REF}}
+                  key: SYSTEM_ADMIN_PASSWORD
+            - name: SYSTEM_ADMIN_SESSION_COOKIE_SECURE
+              value: "{{SYSTEM_ADMIN_SESSION_COOKIE_SECURE}}"
             - name: MONGO_URL
               valueFrom:
                 secretKeyRef:

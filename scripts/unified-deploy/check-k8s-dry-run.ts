@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,7 @@ import {
 import {
   DEFAULT_SITE_ENV_PATH,
   DEFAULT_TEMPLATES_ROOT,
+  parseSiteEnv,
   renderUnifiedDeployFromFiles,
 } from './render';
 import { fingerprintRenderedManifest } from './evidence';
@@ -226,6 +227,35 @@ function collectRenderedSecretValues(renderedYaml: string): string[] {
   return [...secrets].sort((left, right) => right.length - left.length);
 }
 
+function collectEnvSourceSecretValues(source: string): string[] {
+  const secrets = new Set<string>();
+  let values: Record<string, string>;
+  try {
+    values = parseSiteEnv(source);
+  } catch {
+    return [];
+  }
+
+  for (const [key, value] of Object.entries(values)) {
+    addSecretValue(secrets, value, {
+      force: SECRET_FIELD_KEY_PATTERN.test(key) || SECRET_VALUE_PATTERN.test(key),
+    });
+  }
+
+  return [...secrets].sort((left, right) => right.length - left.length);
+}
+
+async function collectInputSecretValues(options: {
+  substrateTruthPath?: string;
+}): Promise<string[]> {
+  const substrateTruthPath = options.substrateTruthPath ?? DEFAULT_SUBSTRATE_TRUTH_PATH;
+  try {
+    return collectEnvSourceSecretValues(await readFile(substrateTruthPath, 'utf8'));
+  } catch {
+    return [];
+  }
+}
+
 function redactDiagnostic(value: string, secretValues: readonly string[] = []): string {
   let redacted = value
     .replace(/\/\/([^:\s/]+):([^@\s/]+)@/gu, '//$1:[REDACTED]@')
@@ -383,7 +413,14 @@ async function dryRunProfile(options: {
     });
     manifestFingerprint = fingerprintRenderedManifest(rendered.output);
     manifestSummary = summarizeRenderedManifest(rendered.output);
-    renderedSecretValues = collectRenderedSecretValues(rendered.output);
+    renderedSecretValues = [
+      ...new Set([
+        ...collectRenderedSecretValues(rendered.output),
+        ...await collectInputSecretValues({
+          substrateTruthPath: options.producerOptions.substrateTruthPath,
+        }),
+      ]),
+    ].sort((left, right) => right.length - left.length);
 
     const renderCheck = checkRenderedOutput(rendered.output, { profile: options.profile });
     if (!renderCheck.ok) {

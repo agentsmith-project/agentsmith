@@ -53,7 +53,6 @@ import {
   type FileLibraryEntry,
   type FileLibraryOperationProjection,
   type FileLibraryObjectMeta,
-  type FileLibraryStoragePort,
   type FileLibraryStorageOperationStatus,
 } from './file-library-afscp-storage.js';
 import {

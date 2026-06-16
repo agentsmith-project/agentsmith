@@ -1697,8 +1697,8 @@ function logRuntimeAccessReleaseFailure(input: {
     theme: 'runtime_pending_readiness',
     scope: 'file_library_runtime_access_release',
     convergence: {
-      pending: 'return_file_library_list_pending_before_read_export',
-      releasing: 'retry_runtime_access_release_before_read_export',
+      pending: 'return_runtime_access_release_pending',
+      releasing: 'retry_runtime_access_release_until_terminal',
       offline: 'wait_for_sandbox_or_workspace_binding_recheck',
       not_found: 'recheck_workspace_binding_before_terminalizing',
       failed: 'stable_blocker_after_repeated_gate_failure',
@@ -1714,52 +1714,6 @@ function logRuntimeAccessReleaseFailure(input: {
       scope: payload.scope,
       diagnostic_serialization: 'failed',
     }));
-  }
-}
-
-function readRuntimeAccessReleaseStatus(response: RuntimeAccessReleaseRouteResponse | null | undefined): string | undefined {
-  const value = response?.body.runtime_access_status;
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-function logFileLibraryListReadExportInvalidationDiagnostic(input: {
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-  requestId?: string;
-  trigger: string;
-  action: 'scheduled' | 'call_storage_invalidate' | 'skipped' | 'failed';
-  reason: string;
-  createdBeforeOrAtMs?: number;
-  releaseResponse?: RuntimeAccessReleaseRouteResponse | null;
-  recheckAttempt?: number;
-}): void {
-  const runtimeAccessStatus = readRuntimeAccessReleaseStatus(input.releaseResponse);
-  const diagnostic = {
-    theme: 'runtime_pending_readiness',
-    workspace_id: input.workspaceId,
-    project_id: input.projectId,
-    file_library_id: input.libraryId,
-    ...(input.requestId ? { request_id: input.requestId } : {}),
-    trigger: input.trigger,
-    action: input.action,
-    reason: input.reason,
-    ...(input.createdBeforeOrAtMs !== undefined ? { created_before_or_at_ms: input.createdBeforeOrAtMs } : {}),
-    ...(input.releaseResponse ? { release_status_code: input.releaseResponse.statusCode } : {}),
-    ...(runtimeAccessStatus ? { runtime_access_status: runtimeAccessStatus } : {}),
-    ...(input.releaseResponse ? { release_error_code: readResponseBodyErrorCode(input.releaseResponse.body) } : {}),
-    ...(input.recheckAttempt !== undefined ? { recheck_attempt: input.recheckAttempt } : {}),
-  };
-  const payload = {
-    event: 'file_library_list_read_export_invalidation_diagnostic',
-    theme: 'runtime_pending_readiness',
-    scope: 'file_library_list_read_export',
-    diagnostic,
-  };
-  try {
-    console.warn('[files] file_library_list_read_export_invalidation_diagnostic %s', JSON.stringify(payload));
-  } catch {
-    // Diagnostics must never affect file library request handling.
   }
 }
 
@@ -1839,17 +1793,7 @@ function isRuntimeAccessReleaseCompleteCorrelation(correlationId: string): boole
 type RuntimeAccessReleaseRouteResponse = {
   statusCode: number;
   body: Record<string, unknown>;
-  invalidateListReadExport?: boolean;
 };
-
-const FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_WAIT_MS = 100;
-const FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_RECHECK_DELAYS_MS = [
-  1_000,
-  2_000,
-  5_000,
-  10_000,
-  15_000,
-] as const;
 
 async function continueRuntimeAccessReleaseAfterFence(input: {
   deps: NodeApiDeps;
@@ -1982,7 +1926,6 @@ async function continueRuntimeAccessReleaseAfterFence(input: {
         released: !releasePending,
         runtime_access_status: releasePending ? 'release_pending' : 'released',
       },
-      invalidateListReadExport: !releasePending,
     };
   } catch (error) {
     if (isWorkspaceBindingActiveWorkloadError(error)) {
@@ -2019,7 +1962,6 @@ async function continueRuntimeAccessReleaseAfterFence(input: {
           released: false,
           runtime_access_status: 'release_pending',
         },
-        invalidateListReadExport: false,
       };
     }
     await rollbackReleaseFence(buildRuntimeAccessReleaseRollbackCorrelationId({
@@ -2063,7 +2005,6 @@ async function convergeExistingRuntimeAccessReleaseFence(input: {
   handled: true;
   statusCode: number;
   body: Record<string, unknown>;
-  invalidateListReadExport?: boolean;
 }> {
   if (
     input.binding.bindingState !== 'releasing'
@@ -2071,8 +2012,6 @@ async function convergeExistingRuntimeAccessReleaseFence(input: {
     return { handled: false };
   }
   if (isRuntimeAccessReleaseCompleteCorrelation(input.binding.correlationId)) {
-    // The release-transition invalidation happens when a begin fence completes;
-    // repeated polls keep the current pending read export warm.
     return {
       handled: true,
       statusCode: 200,
@@ -2081,7 +2020,6 @@ async function convergeExistingRuntimeAccessReleaseFence(input: {
         released: true,
         runtime_access_status: 'released',
       },
-      invalidateListReadExport: false,
     };
   }
   if (!isRuntimeAccessReleaseBeginCorrelation(input.binding.correlationId)) {
@@ -2109,7 +2047,6 @@ async function convergeExistingRuntimeAccessReleaseFence(input: {
           released: false,
           runtime_access_status: 'release_pending',
         },
-        invalidateListReadExport: false,
       };
     }
     const task = await findTaskRecordForBinding({
@@ -2164,7 +2101,6 @@ async function convergeExistingRuntimeAccessReleaseFence(input: {
       released: true,
       runtime_access_status: 'released',
     },
-    invalidateListReadExport: true,
   };
 }
 
@@ -2506,7 +2442,6 @@ async function releaseRuntimeAccessForFileLibrary(input: {
     return {
       statusCode: convergedReleaseFence.statusCode,
       body: convergedReleaseFence.body,
-      invalidateListReadExport: convergedReleaseFence.invalidateListReadExport,
     };
   }
   const task = await findTaskRecordForBinding({
@@ -2586,379 +2521,6 @@ async function releaseRuntimeAccessForFileLibrary(input: {
     releaseCorrelationId,
     actorUserId: input.actorUserId,
   });
-}
-
-function runtimeAccessReleaseCompleted(response: RuntimeAccessReleaseRouteResponse): boolean {
-  return response.statusCode === 200
-    && response.body.runtime_access_status === 'released';
-}
-
-function runtimeAccessReleasePending(response: RuntimeAccessReleaseRouteResponse): boolean {
-  return response.statusCode === 200
-    && response.body.runtime_access_status === 'release_pending';
-}
-
-function runtimeAccessReleasePendingRecheckResponse(libraryId: string): RuntimeAccessReleaseRouteResponse {
-  return {
-    statusCode: 200,
-    body: {
-      file_library_id: libraryId,
-      released: false,
-      runtime_access_status: 'release_pending',
-    },
-  };
-}
-
-function readResponseBodyErrorCode(body: Record<string, unknown>): string | null {
-  const value = body.error_code;
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function isRuntimeAccessReleaseReadExportPending(response: RuntimeAccessReleaseRouteResponse): boolean {
-  if (runtimeAccessReleasePending(response)) {
-    return true;
-  }
-  const errorCode = readResponseBodyErrorCode(response.body);
-  if (
-    response.statusCode === 409
-    && (
-      errorCode === 'FILE_LIBRARY_OPERATION_PENDING'
-      || errorCode === 'FILE_LIBRARY_RETRYABLE_INFRASTRUCTURE_CONFLICT'
-    )
-  ) {
-    return true;
-  }
-  return response.statusCode >= 500
-    && errorCode === 'FILE_LIBRARY_RUNTIME_ACCESS_RELEASE_FAILED';
-}
-
-function shouldInvalidateListReadExportAfterRuntimeRelease(response: RuntimeAccessReleaseRouteResponse): boolean {
-  return runtimeAccessReleaseCompleted(response)
-    && response.invalidateListReadExport === true;
-}
-
-async function raceEntriesPendingRuntimeRelease(
-  releasePromise: Promise<RuntimeAccessReleaseRouteResponse>,
-): Promise<RuntimeAccessReleaseRouteResponse | null> {
-  const guardedReleasePromise = releasePromise.catch(() => null);
-  const timeoutPromise = new Promise<null>((resolve) => {
-    const timeout = setTimeout(
-      () => resolve(null),
-      FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_WAIT_MS,
-    );
-    const maybeNodeTimeout = timeout as unknown as { unref?: () => void };
-    if (typeof maybeNodeTimeout.unref === 'function') {
-      maybeNodeTimeout.unref();
-    }
-  });
-  return Promise.race([guardedReleasePromise, timeoutPromise]);
-}
-
-async function waitForEntriesPendingRuntimeReleaseRecheck(delayMs: number): Promise<void> {
-  await new Promise<void>((resolve) => {
-    const timeout = setTimeout(resolve, delayMs);
-    const maybeNodeTimeout = timeout as unknown as { unref?: () => void };
-    if (typeof maybeNodeTimeout.unref === 'function') {
-      maybeNodeTimeout.unref();
-    }
-  });
-}
-
-async function invalidateListReadExport(input: {
-  storageAdapter: FileLibraryStoragePort;
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-  createdBeforeOrAtMs?: number;
-  requestId?: string;
-  trigger?: string;
-  reason?: string;
-  releaseResponse?: RuntimeAccessReleaseRouteResponse | null;
-  recheckAttempt?: number;
-}): Promise<void> {
-  const trigger = input.trigger ?? 'unspecified';
-  const reason = input.reason ?? 'unspecified';
-  if (typeof input.storageAdapter.invalidateListReadExport !== 'function') {
-    logFileLibraryListReadExportInvalidationDiagnostic({
-      workspaceId: input.workspaceId,
-      projectId: input.projectId,
-      libraryId: input.libraryId,
-      requestId: input.requestId,
-      trigger,
-      action: 'skipped',
-      reason: 'storage_adapter_missing_invalidate',
-      createdBeforeOrAtMs: input.createdBeforeOrAtMs,
-      releaseResponse: input.releaseResponse,
-      recheckAttempt: input.recheckAttempt,
-    });
-    return;
-  }
-  logFileLibraryListReadExportInvalidationDiagnostic({
-    workspaceId: input.workspaceId,
-    projectId: input.projectId,
-    libraryId: input.libraryId,
-    requestId: input.requestId,
-    trigger,
-    action: 'call_storage_invalidate',
-    reason,
-    createdBeforeOrAtMs: input.createdBeforeOrAtMs,
-    releaseResponse: input.releaseResponse,
-    recheckAttempt: input.recheckAttempt,
-  });
-  try {
-    await input.storageAdapter.invalidateListReadExport({
-      workspaceId: input.workspaceId,
-      projectId: input.projectId,
-      libraryId: input.libraryId,
-      ...(typeof input.createdBeforeOrAtMs === 'number'
-        ? { createdBeforeOrAtMs: input.createdBeforeOrAtMs }
-        : {}),
-      requestId: input.requestId,
-    });
-  } catch (error) {
-    logFileLibraryListReadExportInvalidationDiagnostic({
-      workspaceId: input.workspaceId,
-      projectId: input.projectId,
-      libraryId: input.libraryId,
-      requestId: input.requestId,
-      trigger,
-      action: 'failed',
-      reason: 'storage_invalidate_failed',
-      createdBeforeOrAtMs: input.createdBeforeOrAtMs,
-      releaseResponse: input.releaseResponse,
-      recheckAttempt: input.recheckAttempt,
-    });
-    throw error;
-  }
-}
-
-function scheduleListReadExportInvalidationAfterRuntimeRelease(input: {
-  deps: NodeApiDeps;
-  storageAdapter: FileLibraryStoragePort;
-  releasePromise: Promise<RuntimeAccessReleaseRouteResponse>;
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-  actorUserId: string;
-  createdBeforeOrAtMs: number;
-  requestId?: string;
-  trigger: string;
-  reason: string;
-}): void {
-  logFileLibraryListReadExportInvalidationDiagnostic({
-    workspaceId: input.workspaceId,
-    projectId: input.projectId,
-    libraryId: input.libraryId,
-    requestId: input.requestId,
-    trigger: input.trigger,
-    action: 'scheduled',
-    reason: input.reason,
-    createdBeforeOrAtMs: input.createdBeforeOrAtMs,
-  });
-  void (async () => {
-    let releaseResponse: RuntimeAccessReleaseRouteResponse | null = await input.releasePromise.catch(() => null);
-    if (!releaseResponse) {
-      logFileLibraryListReadExportInvalidationDiagnostic({
-        workspaceId: input.workspaceId,
-        projectId: input.projectId,
-        libraryId: input.libraryId,
-        requestId: input.requestId,
-        trigger: input.trigger,
-        action: 'skipped',
-        reason: 'release_response_unavailable',
-        createdBeforeOrAtMs: input.createdBeforeOrAtMs,
-      });
-      return;
-    }
-
-    if (shouldInvalidateListReadExportAfterRuntimeRelease(releaseResponse)) {
-      await invalidateListReadExport({
-        ...input,
-        reason: 'runtime_access_release_completed',
-        releaseResponse,
-      });
-      return;
-    }
-    if (!runtimeAccessReleasePending(releaseResponse)) {
-      logFileLibraryListReadExportInvalidationDiagnostic({
-        workspaceId: input.workspaceId,
-        projectId: input.projectId,
-        libraryId: input.libraryId,
-        requestId: input.requestId,
-        trigger: input.trigger,
-        action: 'skipped',
-        reason: 'runtime_access_release_not_pending',
-        createdBeforeOrAtMs: input.createdBeforeOrAtMs,
-        releaseResponse,
-      });
-      return;
-    }
-
-    for (let recheckIndex = 0; recheckIndex < FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_RECHECK_DELAYS_MS.length; recheckIndex += 1) {
-      const delayMs = FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_RECHECK_DELAYS_MS[recheckIndex] ?? 0;
-      await waitForEntriesPendingRuntimeReleaseRecheck(delayMs);
-      releaseResponse = await releaseRuntimeAccessForFileLibrary({
-        deps: input.deps,
-        workspaceId: input.workspaceId,
-        projectId: input.projectId,
-        libraryId: input.libraryId,
-        actorUserId: input.actorUserId,
-        requestId: input.requestId,
-      }).catch(() => null);
-      if (!releaseResponse) {
-        logFileLibraryListReadExportInvalidationDiagnostic({
-          workspaceId: input.workspaceId,
-          projectId: input.projectId,
-          libraryId: input.libraryId,
-          requestId: input.requestId,
-          trigger: input.trigger,
-          action: 'skipped',
-          reason: 'release_recheck_response_unavailable',
-          createdBeforeOrAtMs: input.createdBeforeOrAtMs,
-          recheckAttempt: recheckIndex + 1,
-        });
-        return;
-      }
-      if (shouldInvalidateListReadExportAfterRuntimeRelease(releaseResponse)) {
-        await invalidateListReadExport({
-          ...input,
-          reason: 'runtime_access_release_recheck_completed',
-          releaseResponse,
-          recheckAttempt: recheckIndex + 1,
-        });
-        return;
-      }
-      if (!runtimeAccessReleasePending(releaseResponse)) {
-        logFileLibraryListReadExportInvalidationDiagnostic({
-          workspaceId: input.workspaceId,
-          projectId: input.projectId,
-          libraryId: input.libraryId,
-          requestId: input.requestId,
-          trigger: input.trigger,
-          action: 'skipped',
-          reason: 'runtime_access_release_recheck_not_pending',
-          createdBeforeOrAtMs: input.createdBeforeOrAtMs,
-          releaseResponse,
-          recheckAttempt: recheckIndex + 1,
-        });
-        return;
-      }
-    }
-    logFileLibraryListReadExportInvalidationDiagnostic({
-      workspaceId: input.workspaceId,
-      projectId: input.projectId,
-      libraryId: input.libraryId,
-      requestId: input.requestId,
-      trigger: input.trigger,
-      action: 'skipped',
-      reason: 'runtime_access_release_recheck_exhausted',
-      createdBeforeOrAtMs: input.createdBeforeOrAtMs,
-      releaseResponse,
-      recheckAttempt: FILE_LIBRARY_ENTRIES_PENDING_RUNTIME_RELEASE_RECHECK_DELAYS_MS.length,
-    });
-  })().catch(() => undefined);
-}
-
-function isFileLibraryListPendingRouteError(input: {
-  statusCode: number;
-  errorCode: string;
-  message: string;
-}): boolean {
-  return input.statusCode === 409
-    && input.errorCode === 'FILE_LIBRARY_OPERATION_PENDING'
-    && input.message === 'file_library_list_pending';
-}
-
-function buildFileLibraryListPendingBody(): Record<string, unknown> {
-  return {
-    error_code: 'FILE_LIBRARY_OPERATION_PENDING',
-    message: 'file_library_list_pending',
-  };
-}
-
-function isRuntimeAccessReleaseBlocked(response: RuntimeAccessReleaseRouteResponse): boolean {
-  return response.statusCode === 409
-    && response.body.message === 'file_library_runtime_access_release_blocked';
-}
-
-async function convergeRuntimeAccessBeforeFileLibraryEntriesList(input: {
-  deps: NodeApiDeps;
-  storageAdapter: FileLibraryStoragePort;
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-  actorUserId: string;
-  requestId?: string;
-}): Promise<{ handled: false } | { handled: true; statusCode: number; body: Record<string, unknown> }> {
-  const activeWriter = await findActiveRuntimeWriter({
-    deps: input.deps,
-    workspaceId: input.workspaceId,
-    projectId: input.projectId,
-    libraryId: input.libraryId,
-  });
-  if (!activeWriter?.binding) {
-    return { handled: false };
-  }
-
-  const listPendingObservedAtMs = Date.now();
-  const releasePromise = releaseRuntimeAccessForFileLibrary({
-    deps: input.deps,
-    workspaceId: input.workspaceId,
-    projectId: input.projectId,
-    libraryId: input.libraryId,
-    actorUserId: input.actorUserId,
-    requestId: input.requestId,
-  });
-  const releaseResponse = await raceEntriesPendingRuntimeRelease(releasePromise);
-  if (!releaseResponse || isRuntimeAccessReleaseReadExportPending(releaseResponse)) {
-    scheduleListReadExportInvalidationAfterRuntimeRelease({
-      deps: input.deps,
-      storageAdapter: input.storageAdapter,
-      releasePromise: releaseResponse
-        ? Promise.resolve(runtimeAccessReleasePendingRecheckResponse(input.libraryId))
-        : releasePromise,
-      workspaceId: input.workspaceId,
-      projectId: input.projectId,
-      libraryId: input.libraryId,
-      actorUserId: input.actorUserId,
-      createdBeforeOrAtMs: listPendingObservedAtMs,
-      requestId: input.requestId,
-      trigger: 'pre_list_runtime_access_convergence',
-      reason: releaseResponse
-        ? 'runtime_access_release_pending_before_read_export'
-        : 'runtime_access_release_timeout_before_read_export',
-    });
-    return {
-      handled: true,
-      statusCode: 409,
-      body: buildFileLibraryListPendingBody(),
-    };
-  }
-  if (shouldInvalidateListReadExportAfterRuntimeRelease(releaseResponse)) {
-    await invalidateListReadExport({
-      storageAdapter: input.storageAdapter,
-      workspaceId: input.workspaceId,
-      projectId: input.projectId,
-      libraryId: input.libraryId,
-      createdBeforeOrAtMs: listPendingObservedAtMs,
-      requestId: input.requestId,
-      trigger: 'pre_list_runtime_access_convergence',
-      reason: 'runtime_access_release_completed_before_read_export',
-      releaseResponse,
-    });
-    return { handled: false };
-  }
-  if (isRuntimeAccessReleaseBlocked(releaseResponse)) {
-    return { handled: false };
-  }
-  if (releaseResponse.statusCode !== 200) {
-    return {
-      handled: true,
-      statusCode: releaseResponse.statusCode,
-      body: releaseResponse.body,
-    };
-  }
-  return { handled: false };
 }
 
 export async function handleProjectFileLibraryRoutes(args: {
@@ -4164,20 +3726,6 @@ export async function handleProjectFileLibraryRoutes(args: {
       sortOrder: parsed.data.sort_order ?? 'asc',
       requestId,
     } as const;
-    const runtimeAccessConvergence = await convergeRuntimeAccessBeforeFileLibraryEntriesList({
-      deps,
-      storageAdapter: deps.fileLibraryStorageAdapter,
-      workspaceId,
-      projectId,
-      libraryId,
-      actorUserId: user.id,
-      requestId,
-    });
-    if (runtimeAccessConvergence.handled) {
-      json(res, runtimeAccessConvergence.statusCode, runtimeAccessConvergence.body);
-      return true;
-    }
-    const listStartedAtMs = Date.now();
     try {
       const listed = await deps.fileLibraryStorageAdapter.listEntries(listInput);
       json(res, 200, {
@@ -4187,46 +3735,6 @@ export async function handleProjectFileLibraryRoutes(args: {
       });
     } catch (error) {
       const mapped = mapFileLibraryControlRouteError(error, 'FILE_LIBRARY_LIST_FAILED', 'file_library_list_failed');
-      if (isFileLibraryListPendingRouteError(mapped)) {
-        const releasePromise = releaseRuntimeAccessForFileLibrary({
-          deps,
-          workspaceId,
-          projectId,
-          libraryId,
-          actorUserId: user.id,
-          requestId,
-        });
-        const releaseResponse = await raceEntriesPendingRuntimeRelease(releasePromise);
-        if (releaseResponse && shouldInvalidateListReadExportAfterRuntimeRelease(releaseResponse)) {
-          await invalidateListReadExport({
-            storageAdapter: deps.fileLibraryStorageAdapter,
-            workspaceId,
-            projectId,
-            libraryId,
-            createdBeforeOrAtMs: listStartedAtMs,
-            requestId,
-            trigger: 'list_pending_route_catch',
-            reason: 'runtime_access_release_completed_after_list_pending',
-            releaseResponse,
-          });
-        } else if (!releaseResponse || runtimeAccessReleasePending(releaseResponse)) {
-          scheduleListReadExportInvalidationAfterRuntimeRelease({
-            deps,
-            storageAdapter: deps.fileLibraryStorageAdapter,
-            releasePromise: releaseResponse ? Promise.resolve(releaseResponse) : releasePromise,
-            workspaceId,
-            projectId,
-            libraryId,
-            actorUserId: user.id,
-            createdBeforeOrAtMs: listStartedAtMs,
-            requestId,
-            trigger: 'list_pending_route_catch',
-            reason: releaseResponse
-              ? 'runtime_access_release_pending_after_list_pending'
-              : 'runtime_access_release_timeout_after_list_pending',
-          });
-        }
-      }
       json(res, mapped.statusCode, {
         error_code: mapped.errorCode,
         message: mapped.message,

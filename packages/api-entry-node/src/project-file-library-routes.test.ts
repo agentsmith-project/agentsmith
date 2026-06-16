@@ -1720,7 +1720,138 @@ describe('project-file-library-routes', () => {
     },
   );
 
-  it('releases idle task runtime access before a successful entries list so the export is fresh', async () => {
+  it('lists active runtime writer files through live storage without releasing runtime access', async () => {
+    const storageAdapter = createStorageAdapter({
+      listEntries: vi.fn(async () => ({
+        path: 'workspace/',
+        items: [
+          {
+            kind: 'file',
+            path: 'workspace/live.txt',
+            name: 'live.txt',
+            size_bytes: 7,
+            content_type: 'text/plain',
+            modified_at: '2026-06-16T00:00:00.000Z',
+          },
+          {
+            kind: 'directory',
+            path: 'workspace/.artifacts/',
+            name: '.artifacts',
+          },
+        ],
+        nextContinuationToken: null,
+      })),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_entries_live_writer',
+      title: 'Entries live writer task',
+    });
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => activeRuntimeBinding(libraryId));
+    deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
+      throw new Error('entries list must not release runtime access');
+    });
+
+    const entriesJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryEntries',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        url: '/file-libraries/entries?path=workspace',
+        headers: { 'x-request-id': 'req_entries_live_writer' },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: entriesJson,
+      readBody: vi.fn(),
+    });
+
+    expect(deps.internalAgentPodManager.releasePod).not.toHaveBeenCalled();
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+    expect(storageAdapter.listEntries).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      path: 'workspace/',
+      requestId: 'req_entries_live_writer',
+    }));
+    expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      path: 'workspace/',
+      items: [
+        expect.objectContaining({
+          kind: 'file',
+          path: 'workspace/live.txt',
+          name: 'live.txt',
+        }),
+        expect.objectContaining({
+          kind: 'directory',
+          path: 'workspace/.artifacts/',
+          name: '.artifacts',
+        }),
+      ],
+      next_continuation_token: null,
+    });
+  });
+
+  it('returns typed entries pending for active runtime writers without release convergence', async () => {
+    const storageAdapter = createStorageAdapter({
+      listEntries: vi.fn(async () => {
+        throw new Error('file_library_list_pending');
+      }),
+    });
+    const deps = createDeps({ storageAdapter });
+    const created = await createReadyLibrary(deps);
+    const libraryId = String(created.id);
+    await seedBoundTask({
+      deps,
+      libraryId,
+      taskId: 'task_entries_live_pending',
+      title: 'Entries live pending task',
+    });
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => activeRuntimeBinding(libraryId));
+    deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
+      throw new Error('entries pending must not release runtime access');
+    });
+
+    const entriesJson = vi.fn();
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryEntries',
+      method: 'GET',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId,
+      req: {
+        url: '/file-libraries/entries?path=workspace%2F.artifacts',
+        headers: { 'x-request-id': 'req_entries_live_pending' },
+      } as never,
+      res: createMockResponse(),
+      deps,
+      user: OWNER_USER,
+      json: entriesJson,
+      readBody: vi.fn(),
+    });
+
+    expect(deps.internalAgentPodManager.releasePod).not.toHaveBeenCalled();
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+    expect(storageAdapter.listEntries).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'workspace/.artifacts/',
+      requestId: 'req_entries_live_pending',
+    }));
+    expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
+      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
+      message: 'file_library_list_pending',
+    });
+  });
+
+  it('lists live entries through storage without converging idle runtime access', async () => {
     const storageAdapter = createStorageAdapter({
       listEntries: vi.fn(async () => ({
         path: 'workspace/.artifacts/',
@@ -1743,13 +1874,12 @@ describe('project-file-library-routes', () => {
     await seedBoundTask({
       deps,
       libraryId,
-      taskId: 'task_entries_pre_list_release',
-      title: 'Entries pre-list release task',
+      taskId: 'task_entries_live_no_release',
+      title: 'Entries live no release task',
     });
-    let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
-    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => activeRuntimeBinding(libraryId));
     deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
-      runtimeBinding = null;
+      throw new Error('entries list must not release runtime access');
     });
 
     const entriesJson = vi.fn();
@@ -1761,7 +1891,7 @@ describe('project-file-library-routes', () => {
       libraryId,
       req: {
         url: '/file-libraries/entries?path=workspace%2F.artifacts',
-        headers: { 'x-request-id': 'req_entries_pre_list_release' },
+        headers: { 'x-request-id': 'req_entries_live_no_release' },
       } as never,
       res: createMockResponse(),
       deps,
@@ -1770,24 +1900,13 @@ describe('project-file-library-routes', () => {
       readBody: vi.fn(),
     });
 
-    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledWith({
-      workspaceId: 'ws_default',
-      fileLibraryId: libraryId,
-    });
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith(expect.objectContaining({
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId,
-      createdBeforeOrAtMs: expect.any(Number),
-      requestId: 'req_entries_pre_list_release',
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+    expect(deps.internalAgentPodManager.releasePod).not.toHaveBeenCalled();
+    expect(storageAdapter.invalidateListReadExport).not.toHaveBeenCalled();
+    expect(storageAdapter.listEntries).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'workspace/.artifacts/',
+      requestId: 'req_entries_live_no_release',
     }));
-    const releaseCallOrder = vi
-      .mocked(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding)
-      .mock.invocationCallOrder[0] ?? 0;
-    const listCallOrder = vi
-      .mocked(storageAdapter.listEntries)
-      .mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY;
-    expect(releaseCallOrder).toBeLessThan(listCallOrder);
     expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 200, {
       path: 'workspace/.artifacts/',
       items: [
@@ -1801,7 +1920,7 @@ describe('project-file-library-routes', () => {
     });
   });
 
-  it('keeps entries list behavior when invalidation diagnostic logging throws', async () => {
+  it('keeps entries list behavior independent from runtime release diagnostics', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
       throw new Error('diagnostic logger unavailable');
     });
@@ -1819,13 +1938,12 @@ describe('project-file-library-routes', () => {
       await seedBoundTask({
         deps,
         libraryId,
-        taskId: 'task_entries_pre_list_release_warn_throw',
-        title: 'Entries pre-list release warn throw task',
+        taskId: 'task_entries_no_release_warn_throw',
+        title: 'Entries no release warn throw task',
       });
-      let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
-      deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
+      deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => activeRuntimeBinding(libraryId));
       deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
-        runtimeBinding = null;
+        throw new Error('entries list must not release runtime access');
       });
 
       const entriesJson = vi.fn();
@@ -1837,7 +1955,7 @@ describe('project-file-library-routes', () => {
         libraryId,
         req: {
           url: '/file-libraries/entries?path=workspace%2F.artifacts',
-          headers: { 'x-request-id': 'req_entries_pre_list_release_warn_throw' },
+          headers: { 'x-request-id': 'req_entries_no_release_warn_throw' },
         } as never,
         res: createMockResponse(),
         deps,
@@ -1846,8 +1964,9 @@ describe('project-file-library-routes', () => {
         readBody: vi.fn(),
       });
 
-      expect(warnSpy).toHaveBeenCalled();
-      expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
+      expect(warnSpy).not.toHaveBeenCalled();
+      expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+      expect(storageAdapter.invalidateListReadExport).not.toHaveBeenCalled();
       expect(storageAdapter.listEntries).toHaveBeenCalledTimes(1);
       expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 200, {
         path: 'workspace/.artifacts/',
@@ -1859,7 +1978,7 @@ describe('project-file-library-routes', () => {
     }
   });
 
-  it('returns entries pending without creating a stale export while pre-list runtime release is pending', async () => {
+  it('lists live entries while runtime release would remain pending', async () => {
     const storageAdapter = createStorageAdapter({
       listEntries: vi.fn(async () => ({
         path: 'workspace/.artifacts/',
@@ -1873,17 +1992,12 @@ describe('project-file-library-routes', () => {
     await seedBoundTask({
       deps,
       libraryId,
-      taskId: 'task_entries_pre_list_release_pending',
-      title: 'Entries pre-list release pending task',
+      taskId: 'task_entries_release_pending_ignored',
+      title: 'Entries release pending ignored task',
     });
-    let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
-    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => activeRuntimeBinding(libraryId));
     deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
-      runtimeBinding = {
-        ...activeRuntimeBinding(libraryId),
-        status: 'releasing',
-        mount_binding_status: 'releasing',
-      };
+      throw new Error('entries list must not release runtime access');
     });
 
     const entriesJson = vi.fn();
@@ -1895,7 +2009,7 @@ describe('project-file-library-routes', () => {
       libraryId,
       req: {
         url: '/file-libraries/entries?path=workspace%2F.artifacts',
-        headers: { 'x-request-id': 'req_entries_pre_list_release_pending' },
+        headers: { 'x-request-id': 'req_entries_release_pending_ignored' },
       } as never,
       res: createMockResponse(),
       deps,
@@ -1904,20 +2018,21 @@ describe('project-file-library-routes', () => {
       readBody: vi.fn(),
     });
 
-    expect(storageAdapter.listEntries).not.toHaveBeenCalled();
-    expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
-      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
-      message: 'file_library_list_pending',
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+    expect(storageAdapter.invalidateListReadExport).not.toHaveBeenCalled();
+    expect(storageAdapter.listEntries).toHaveBeenCalledTimes(1);
+    expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 200, {
+      path: 'workspace/.artifacts/',
+      items: [],
+      next_continuation_token: null,
     });
   });
 
-  it('keeps entries pending without creating a stale export when pre-list runtime release is retryable infrastructure', async () => {
+  it('keeps entries pending without retryable runtime release convergence', async () => {
     const storageAdapter = createStorageAdapter({
-      listEntries: vi.fn(async () => ({
-        path: 'workspace/.artifacts/',
-        items: [],
-        nextContinuationToken: null,
-      })),
+      listEntries: vi.fn(async () => {
+        throw new Error('file_library_list_pending');
+      }),
     });
     const deps = createDeps({ storageAdapter });
     const created = await createReadyLibrary(deps);
@@ -1925,8 +2040,8 @@ describe('project-file-library-routes', () => {
     await seedBoundTask({
       deps,
       libraryId,
-      taskId: 'task_entries_pre_list_release_retryable',
-      title: 'Entries pre-list retryable release task',
+      taskId: 'task_entries_no_retryable_release',
+      title: 'Entries no retryable release task',
     });
     deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => activeRuntimeBinding(libraryId));
     deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
@@ -1934,6 +2049,15 @@ describe('project-file-library-routes', () => {
         code: 'AGENT_SANDBOX_UNAVAILABLE',
         status: 502,
         operation: 'delete_workspace_binding',
+        requestId: 'asbcp_req_entries_release_retryable',
+        retryable: true,
+      });
+    });
+    deps.internalAgentPodManager.releasePod = vi.fn(async () => {
+      throw Object.assign(new Error('sandbox release unavailable raw-secret-token'), {
+        code: 'AGENT_SANDBOX_UNAVAILABLE',
+        status: 502,
+        operation: 'delete_pod',
         requestId: 'asbcp_req_entries_release_retryable',
         retryable: true,
       });
@@ -1950,7 +2074,7 @@ describe('project-file-library-routes', () => {
         libraryId,
         req: {
           url: '/file-libraries/entries?path=workspace%2F.artifacts',
-          headers: { 'x-request-id': 'req_entries_pre_list_release_retryable' },
+          headers: { 'x-request-id': 'req_entries_no_retryable_release' },
         } as never,
         res: createMockResponse(),
         deps,
@@ -1959,26 +2083,25 @@ describe('project-file-library-routes', () => {
         readBody: vi.fn(),
       });
 
-      expect(storageAdapter.listEntries).not.toHaveBeenCalled();
+      expect(storageAdapter.listEntries).toHaveBeenCalledWith(expect.objectContaining({
+        path: 'workspace/.artifacts/',
+        requestId: 'req_entries_no_retryable_release',
+      }));
+      expect(deps.internalAgentPodManager.releasePod).not.toHaveBeenCalled();
+      expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+      expect(storageAdapter.invalidateListReadExport).not.toHaveBeenCalled();
       expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
         error_code: 'FILE_LIBRARY_OPERATION_PENDING',
         message: 'file_library_list_pending',
       });
       expect(JSON.stringify(entriesJson.mock.calls)).not.toMatch(/raw-secret-token|delete_workspace_binding/);
-      expect(warnSpy).toHaveBeenCalledWith(
-        '[files] runtime_pending_readiness_failure %s',
-        expect.stringContaining('"scope":"file_library_runtime_access_release"'),
-      );
-      expect(warnSpy).toHaveBeenCalledWith(
-        '[files] runtime_pending_readiness_failure %s',
-        expect.stringContaining('"request_id":"release:begin:req_entries_pre_list_release_retryable"'),
-      );
+      expect(warnSpy).not.toHaveBeenCalled();
     } finally {
       warnSpy.mockRestore();
     }
   });
 
-  it('releases idle task runtime access and lets the next entries poll use a refreshed export', async () => {
+  it('lets consecutive live entries polls observe pending then fresh items without release invalidation', async () => {
     const storageAdapter = createStorageAdapter({
       listEntries: vi.fn()
         .mockRejectedValueOnce(new Error('file_library_list_pending'))
@@ -2003,13 +2126,12 @@ describe('project-file-library-routes', () => {
     await seedBoundTask({
       deps,
       libraryId,
-      taskId: 'task_entries_pending_release',
-      title: 'Entries pending release task',
+      taskId: 'task_entries_pending_then_fresh',
+      title: 'Entries pending then fresh task',
     });
-    let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
-    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => activeRuntimeBinding(libraryId));
     deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
-      runtimeBinding = null;
+      throw new Error('entries list must not release runtime access');
     });
 
     const firstEntriesJson = vi.fn();
@@ -2030,18 +2152,9 @@ describe('project-file-library-routes', () => {
       readBody: vi.fn(),
     });
 
-    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledWith({
-      workspaceId: 'ws_default',
-      fileLibraryId: libraryId,
-    });
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith(expect.objectContaining({
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId,
-      createdBeforeOrAtMs: expect.any(Number),
-      requestId: 'req_entries_pending_release_first',
-    }));
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
+    expect(deps.internalAgentPodManager.releasePod).not.toHaveBeenCalled();
+    expect(storageAdapter.invalidateListReadExport).not.toHaveBeenCalled();
     expect(storageAdapter.listEntries).toHaveBeenCalledTimes(1);
     expect(firstEntriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
       error_code: 'FILE_LIBRARY_OPERATION_PENDING',
@@ -2067,7 +2180,7 @@ describe('project-file-library-routes', () => {
     });
 
     expect(storageAdapter.listEntries).toHaveBeenCalledTimes(2);
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
+    expect(storageAdapter.invalidateListReadExport).not.toHaveBeenCalled();
     expect(secondEntriesJson).toHaveBeenCalledWith(expect.anything(), 200, {
       path: 'workspace/.artifacts/',
       items: [
@@ -2081,7 +2194,7 @@ describe('project-file-library-routes', () => {
     });
   });
 
-  it('keeps a post-release pending read export warm across consecutive pending polls', async () => {
+  it('keeps typed pending across consecutive live entries polls without release invalidation', async () => {
     const storageAdapter = createStorageAdapter({
       listEntries: vi.fn(async () => {
         throw new Error('file_library_list_pending');
@@ -2093,13 +2206,12 @@ describe('project-file-library-routes', () => {
     await seedBoundTask({
       deps,
       libraryId,
-      taskId: 'task_entries_post_release_pending',
-      title: 'Entries post release pending task',
+      taskId: 'task_entries_live_pending_repeat',
+      title: 'Entries live pending repeat task',
     });
-    let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
-    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
+    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => activeRuntimeBinding(libraryId));
     deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
-      runtimeBinding = null;
+      throw new Error('entries list must not release runtime access');
     });
 
     const firstEntriesJson = vi.fn();
@@ -2121,14 +2233,8 @@ describe('project-file-library-routes', () => {
     });
 
     expect(storageAdapter.listEntries).toHaveBeenCalledTimes(1);
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenLastCalledWith(expect.objectContaining({
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId,
-      createdBeforeOrAtMs: expect.any(Number),
-      requestId: 'req_entries_post_release_pending_first',
-    }));
+    expect(storageAdapter.invalidateListReadExport).not.toHaveBeenCalled();
+    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
     expect(firstEntriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
       error_code: 'FILE_LIBRARY_OPERATION_PENDING',
       message: 'file_library_list_pending',
@@ -2153,358 +2259,12 @@ describe('project-file-library-routes', () => {
     });
 
     expect(storageAdapter.listEntries).toHaveBeenCalledTimes(2);
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
+    expect(storageAdapter.invalidateListReadExport).not.toHaveBeenCalled();
+    expect(deps.internalAgentPodManager.releasePod).not.toHaveBeenCalled();
     expect(secondEntriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
       error_code: 'FILE_LIBRARY_OPERATION_PENDING',
       message: 'file_library_list_pending',
     });
-  });
-
-  it('keeps the current pending read export warm when post-release entries list is still pending', async () => {
-    vi.useFakeTimers();
-    const listStartMs = Date.parse('2026-06-07T08:00:00.000Z');
-    vi.setSystemTime(new Date(listStartMs));
-    try {
-      const storageAdapter = createStorageAdapter({
-        listEntries: vi.fn(async () => {
-          vi.setSystemTime(new Date(listStartMs + 30_000));
-          throw new Error('file_library_list_pending');
-        }),
-      });
-      const deps = createDeps({ storageAdapter });
-      const created = await createReadyLibrary(deps);
-      const libraryId = String(created.id);
-      await seedBoundTask({
-        deps,
-        libraryId,
-        taskId: 'task_entries_pending_keeps_current_export',
-        title: 'Entries pending keeps current export task',
-      });
-      let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
-      deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
-      deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
-        runtimeBinding = null;
-      });
-
-      const entriesJson = vi.fn();
-      await handleProjectFileLibraryRoutes({
-        routeKind: 'fileLibraryEntries',
-        method: 'GET',
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        libraryId,
-        req: {
-          url: '/file-libraries/entries?path=workspace%2F.artifacts',
-          headers: { 'x-request-id': 'req_entries_pending_keep_current_export' },
-        } as never,
-        res: createMockResponse(),
-        deps,
-        user: OWNER_USER,
-        json: entriesJson,
-        readBody: vi.fn(),
-      });
-
-      expect(storageAdapter.listEntries).toHaveBeenCalledTimes(1);
-      expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledTimes(1);
-      expect(storageAdapter.invalidateListReadExport).toHaveBeenLastCalledWith(expect.objectContaining({
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        libraryId,
-        createdBeforeOrAtMs: listStartMs,
-        requestId: 'req_entries_pending_keep_current_export',
-      }));
-      expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
-        error_code: 'FILE_LIBRARY_OPERATION_PENDING',
-        message: 'file_library_list_pending',
-      });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('keeps entries pending without creating a stale export while slow idle runtime release continues in the background', async () => {
-    const storageAdapter = createStorageAdapter({
-      listEntries: vi.fn(async () => {
-        throw new Error('file_library_list_pending');
-      }),
-    });
-    const deps = createDeps({ storageAdapter });
-    const created = await createReadyLibrary(deps);
-    const libraryId = String(created.id);
-    await seedBoundTask({
-      deps,
-      libraryId,
-      taskId: 'task_entries_pending_slow_release',
-      title: 'Entries pending slow release task',
-    });
-    const releaseGate = createDeferred<void>();
-    let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
-    deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
-    deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
-      await releaseGate.promise;
-      runtimeBinding = null;
-    });
-
-    const entriesJson = vi.fn();
-    await handleProjectFileLibraryRoutes({
-      routeKind: 'fileLibraryEntries',
-      method: 'GET',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId,
-      req: {
-        url: '/file-libraries/entries?path=workspace%2F.artifacts',
-        headers: { 'x-request-id': 'req_entries_pending_slow_release' },
-      } as never,
-      res: createMockResponse(),
-      deps,
-      user: OWNER_USER,
-      json: entriesJson,
-      readBody: vi.fn(),
-    });
-
-    expect(storageAdapter.listEntries).not.toHaveBeenCalled();
-    expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
-      error_code: 'FILE_LIBRARY_OPERATION_PENDING',
-      message: 'file_library_list_pending',
-    });
-    expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledWith({
-      workspaceId: 'ws_default',
-      fileLibraryId: libraryId,
-    });
-    expect(storageAdapter.invalidateListReadExport).not.toHaveBeenCalled();
-
-    releaseGate.resolve();
-    await flushAsyncWork(10);
-    expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith(expect.objectContaining({
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId,
-      createdBeforeOrAtMs: expect.any(Number),
-      requestId: 'req_entries_pending_slow_release',
-    }));
-    await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      fileLibraryId: libraryId,
-    })).resolves.toMatchObject({
-      bindingState: 'releasing',
-      correlationId: buildRuntimeAccessReleaseCompleteCorrelationId({
-        beginCorrelationId: buildRuntimeAccessReleaseBeginCorrelationId({
-          requestId: 'req_entries_pending_slow_release',
-        }),
-      }),
-    });
-  });
-
-  it('continues release-pending entries runtime access in the background before invalidating read export', async () => {
-    vi.useFakeTimers();
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    try {
-      const storageAdapter = createStorageAdapter({
-        listEntries: vi.fn(async () => {
-          throw new Error('file_library_list_pending');
-        }),
-      });
-      const deps = createDeps({ storageAdapter });
-      const created = await createReadyLibrary(deps);
-      const libraryId = String(created.id);
-      await seedBoundTask({
-        deps,
-        libraryId,
-        taskId: 'task_entries_release_pending_background',
-        title: 'Entries release pending background task',
-      });
-      let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
-      deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
-      deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
-        runtimeBinding = {
-          ...activeRuntimeBinding(libraryId),
-          status: 'releasing',
-          mount_binding_status: 'releasing',
-        };
-      });
-
-      const entriesJson = vi.fn();
-      await handleProjectFileLibraryRoutes({
-        routeKind: 'fileLibraryEntries',
-        method: 'GET',
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        libraryId,
-        req: {
-          url: '/file-libraries/entries?path=workspace%2F.artifacts',
-          headers: { 'x-request-id': 'req_entries_release_pending_background' },
-        } as never,
-        res: createMockResponse(),
-        deps,
-        user: OWNER_USER,
-        json: entriesJson,
-        readBody: vi.fn(),
-      });
-
-      expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
-        error_code: 'FILE_LIBRARY_OPERATION_PENDING',
-        message: 'file_library_list_pending',
-      });
-      expect(storageAdapter.invalidateListReadExport).not.toHaveBeenCalled();
-      await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        fileLibraryId: libraryId,
-      })).resolves.toMatchObject({
-        bindingState: 'releasing',
-        correlationId: buildRuntimeAccessReleaseBeginCorrelationId({
-          requestId: 'req_entries_release_pending_background',
-        }),
-      });
-
-      for (let index = 0; index < 5; index += 1) {
-        await Promise.resolve();
-      }
-      runtimeBinding = null;
-      await vi.advanceTimersByTimeAsync(1_000);
-      for (let index = 0; index < 10; index += 1) {
-        await Promise.resolve();
-      }
-
-      expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledTimes(1);
-      expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith(expect.objectContaining({
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        libraryId,
-        createdBeforeOrAtMs: expect.any(Number),
-        requestId: 'req_entries_release_pending_background',
-      }));
-      await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        fileLibraryId: libraryId,
-      })).resolves.toMatchObject({
-        bindingState: 'releasing',
-        correlationId: buildRuntimeAccessReleaseCompleteCorrelationId({
-          beginCorrelationId: buildRuntimeAccessReleaseBeginCorrelationId({
-            requestId: 'req_entries_release_pending_background',
-          }),
-        }),
-      });
-      expect(warnSpy).toHaveBeenCalledWith(
-        '[files] file_library_list_read_export_invalidation_diagnostic %s',
-        expect.stringContaining('"action":"scheduled"'),
-      );
-      expect(warnSpy).toHaveBeenCalledWith(
-        '[files] file_library_list_read_export_invalidation_diagnostic %s',
-        expect.stringContaining('"reason":"runtime_access_release_recheck_completed"'),
-      );
-    } finally {
-      warnSpy.mockRestore();
-      vi.useRealTimers();
-    }
-  });
-
-  it('continues sandbox-unavailable entries runtime access in the background before invalidating read export', async () => {
-    vi.useFakeTimers();
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    try {
-      const storageAdapter = createStorageAdapter({
-        listEntries: vi.fn(async () => {
-          throw new Error('file_library_list_pending');
-        }),
-      });
-      const deps = createDeps({ storageAdapter });
-      const created = await createReadyLibrary(deps);
-      const libraryId = String(created.id);
-      await seedBoundTask({
-        deps,
-        libraryId,
-        taskId: 'task_entries_sandbox_release_pending_background',
-        title: 'Entries sandbox release pending background task',
-      });
-      let runtimeBinding: InternalAgentWorkspaceBinding | null = activeRuntimeBinding(libraryId);
-      deps.internalAgentWorkspaceBindingManager.findWorkspaceBinding = vi.fn(async () => runtimeBinding);
-      deps.internalAgentPodManager.releasePod = vi.fn()
-        .mockRejectedValueOnce(Object.assign(
-          new Error('asbcp_error: delete_pod 502 secret=raw-secret-token dependency failure'),
-          {
-            code: 'AGENT_SANDBOX_UNAVAILABLE',
-            status: 502,
-            operation: 'delete_pod',
-            retryable: true,
-            requestId: 'asbcp_req_entries_sandbox_release_pending',
-          },
-        ))
-        .mockResolvedValue(undefined);
-      deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding = vi.fn(async () => {
-        runtimeBinding = null;
-      });
-
-      const entriesJson = vi.fn();
-      await handleProjectFileLibraryRoutes({
-        routeKind: 'fileLibraryEntries',
-        method: 'GET',
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        libraryId,
-        req: {
-          url: '/file-libraries/entries?path=workspace%2F.artifacts',
-          headers: { 'x-request-id': 'req_entries_sandbox_release_pending_background' },
-        } as never,
-        res: createMockResponse(),
-        deps,
-        user: OWNER_USER,
-        json: entriesJson,
-        readBody: vi.fn(),
-      });
-
-      expect(entriesJson).toHaveBeenCalledWith(expect.anything(), 409, {
-        error_code: 'FILE_LIBRARY_OPERATION_PENDING',
-        message: 'file_library_list_pending',
-      });
-      expect(storageAdapter.invalidateListReadExport).not.toHaveBeenCalled();
-      expect(deps.internalAgentPodManager.releasePod).toHaveBeenCalledTimes(1);
-      expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).not.toHaveBeenCalled();
-      await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        fileLibraryId: libraryId,
-      })).resolves.toMatchObject({
-        bindingState: 'releasing',
-        correlationId: buildRuntimeAccessReleaseBeginCorrelationId({
-          requestId: 'req_entries_sandbox_release_pending_background',
-        }),
-      });
-
-      await vi.advanceTimersByTimeAsync(1_000);
-      for (let index = 0; index < 10; index += 1) {
-        await Promise.resolve();
-      }
-
-      expect(deps.internalAgentPodManager.releasePod).toHaveBeenCalledTimes(2);
-      expect(deps.internalAgentWorkspaceBindingManager.deleteWorkspaceBinding).toHaveBeenCalledTimes(1);
-      expect(storageAdapter.invalidateListReadExport).toHaveBeenCalledWith(expect.objectContaining({
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        libraryId,
-        createdBeforeOrAtMs: expect.any(Number),
-        requestId: 'req_entries_sandbox_release_pending_background',
-      }));
-      await expect(new JsonDocTaskFileLibraryBindingRepo(deps.docStore).find({
-        workspaceId: 'ws_default',
-        projectId: 'proj_1',
-        fileLibraryId: libraryId,
-      })).resolves.toMatchObject({
-        bindingState: 'releasing',
-        correlationId: buildRuntimeAccessReleaseCompleteCorrelationId({
-          beginCorrelationId: buildRuntimeAccessReleaseBeginCorrelationId({
-            requestId: 'req_entries_sandbox_release_pending_background',
-          }),
-        }),
-      });
-      expect(JSON.stringify(warnSpy.mock.calls)).not.toMatch(/raw-secret-token|secret=/);
-    } finally {
-      warnSpy.mockRestore();
-      vi.useRealTimers();
-    }
   });
 
   it('deletes ready libraries through the storage adapter and rolls back when content remains', async () => {

@@ -4,12 +4,23 @@ import type { NodeApiDeps } from './node-api-deps.js';
 import { AgentResourceService } from './agent-resource-service.js';
 import { AgentTaskModelSettingService } from './agent-task-model-setting-service.js';
 import {
+  DeploymentManagedRunnerSeedConfigError,
   deploymentManagedRunnerSeedInputFromEnv,
   seedDeploymentDefaultManagedRunner,
 } from './deployment-managed-runner-seed.js';
 import { EndpointResourceService } from './endpoint-resource-service.js';
 
 const RUNNER_IMAGE = `kind-registry:5000/mbos/agentsmith-managed-runner@sha256:${'a'.repeat(64)}`;
+const VALID_SEED_ENV = {
+  DEPLOYMENT_DEFAULT_WORKSPACE_ID: 'ws_default',
+  DEPLOYMENT_DEFAULT_PROJECT_ID: 'proj_1',
+  DEPLOYMENT_DEFAULT_ENDPOINT_NAME: 'deployment-agent-task',
+  DEPLOYMENT_DEFAULT_ENDPOINT_BASE_URL: 'https://provider.example/v1',
+  DEPLOYMENT_DEFAULT_ENDPOINT_PROTOCOL: 'openai_chat_completions',
+  DEPLOYMENT_DEFAULT_ENDPOINT_MODEL: 'gpt-5.5',
+  DEPLOYMENT_DEFAULT_CREDENTIAL_NAME: 'deployment-agent-task-key',
+  DEPLOYMENT_DEFAULT_ENDPOINT_API_KEY: 'sk-operator-provided',
+};
 
 function buildDeps(docStore = new InMemoryJsonDocStore()): NodeApiDeps {
   const endpointResourceService = new EndpointResourceService(docStore);
@@ -19,6 +30,25 @@ function buildDeps(docStore = new InMemoryJsonDocStore()): NodeApiDeps {
     endpointResourceService,
     agentResourceService: new AgentResourceService(docStore),
   } as unknown as NodeApiDeps;
+}
+
+function expectInvalidProtocolEnv(
+  env: Record<string, string | undefined>,
+  expected: { envName: string; value: string },
+): void {
+  const deps = buildDeps();
+  let thrown: unknown;
+  try {
+    deploymentManagedRunnerSeedInputFromEnv(deps, env);
+  } catch (error) {
+    thrown = error;
+  }
+
+  expect(thrown).toBeInstanceOf(DeploymentManagedRunnerSeedConfigError);
+  expect(thrown).toMatchObject({
+    code: 'operator_endpoint_protocol_invalid',
+    ...expected,
+  });
 }
 
 describe('seedDeploymentDefaultManagedRunner', () => {
@@ -140,13 +170,8 @@ describe('seedDeploymentDefaultManagedRunner', () => {
     const deps = buildDeps();
 
     const result = await seedDeploymentDefaultManagedRunner(deploymentManagedRunnerSeedInputFromEnv(deps, {
-      DEPLOYMENT_DEFAULT_WORKSPACE_ID: 'ws_default',
-      DEPLOYMENT_DEFAULT_PROJECT_ID: 'proj_1',
-      DEPLOYMENT_DEFAULT_ENDPOINT_NAME: 'deployment-agent-task',
-      DEPLOYMENT_DEFAULT_ENDPOINT_BASE_URL: 'https://provider.example/v1',
-      DEPLOYMENT_DEFAULT_ENDPOINT_MODEL: 'gpt-5.5',
-      DEPLOYMENT_DEFAULT_CREDENTIAL_NAME: 'deployment-agent-task-key',
-      DEPLOYMENT_DEFAULT_ENDPOINT_API_KEY: 'sk-operator-provided',
+      ...VALID_SEED_ENV,
+      DEPLOYMENT_DEFAULT_ENDPOINT_PROTOCOL: undefined,
     }));
 
     expect(result).toEqual({
@@ -159,5 +184,43 @@ describe('seedDeploymentDefaultManagedRunner', () => {
     await expect(
       deps.agentResourceService.getDeploymentDefaultManagedAgentRunner('ws_default', 'proj_1'),
     ).resolves.toBeNull();
+  });
+
+  it('seeds env input when the upstream protocol is explicitly valid', async () => {
+    process.env.INTERNAL_AGENT_IMAGE = RUNNER_IMAGE;
+    const deps = buildDeps();
+
+    const result = await seedDeploymentDefaultManagedRunner(deploymentManagedRunnerSeedInputFromEnv(deps, {
+      ...VALID_SEED_ENV,
+    }));
+
+    expect(result).toMatchObject({
+      status: 'seeded',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    const endpoint = await deps.endpointResourceService.getEndpoint('ws_default', 'proj_1', result.endpointId ?? '');
+    expect(endpoint?.upstream_protocol).toBe('openai_chat_completions');
+  });
+
+  it('throws a typed failure for an invalid deployment default endpoint protocol', () => {
+    expectInvalidProtocolEnv({
+      ...VALID_SEED_ENV,
+      DEPLOYMENT_DEFAULT_ENDPOINT_PROTOCOL: 'openai_chat',
+    }, {
+      envName: 'DEPLOYMENT_DEFAULT_ENDPOINT_PROTOCOL',
+      value: 'openai_chat',
+    });
+  });
+
+  it('throws a typed failure for an invalid preset anthropic endpoint protocol', () => {
+    expectInvalidProtocolEnv({
+      ...VALID_SEED_ENV,
+      DEPLOYMENT_DEFAULT_ENDPOINT_PROTOCOL: undefined,
+      PRESET_ANTHROPIC_ENDPOINT_PROTOCOL: 'anthropic',
+    }, {
+      envName: 'PRESET_ANTHROPIC_ENDPOINT_PROTOCOL',
+      value: 'anthropic',
+    });
   });
 });

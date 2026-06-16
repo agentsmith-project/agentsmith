@@ -43,12 +43,38 @@ type SeedEnv = NodeJS.ProcessEnv | Record<string, string | undefined>;
 type ResolvedDeploymentManagedRunnerSeedEndpointInput = DeploymentManagedRunnerSeedEndpointInput & {
   upstreamProtocol: EndpointUpstreamProtocol;
 };
+type DeploymentManagedRunnerEndpointProtocolEnvKey =
+  | 'DEPLOYMENT_DEFAULT_ENDPOINT_PROTOCOL'
+  | 'PRESET_ANTHROPIC_ENDPOINT_PROTOCOL';
+type DeploymentManagedRunnerSeedConfigErrorCode = 'operator_endpoint_protocol_invalid';
 
 const DEPLOYMENT_MANAGED_RUNNER_ENDPOINT_PROTOCOLS = new Set<EndpointUpstreamProtocol>([
   'openai_chat_completions',
   'openai_responses',
   'anthropic_messages',
 ]);
+const DEPLOYMENT_MANAGED_RUNNER_ENDPOINT_PROTOCOL_ENV_KEYS: readonly DeploymentManagedRunnerEndpointProtocolEnvKey[] = [
+  'DEPLOYMENT_DEFAULT_ENDPOINT_PROTOCOL',
+  'PRESET_ANTHROPIC_ENDPOINT_PROTOCOL',
+];
+
+export class DeploymentManagedRunnerSeedConfigError extends Error {
+  readonly code: DeploymentManagedRunnerSeedConfigErrorCode;
+  readonly envName: DeploymentManagedRunnerEndpointProtocolEnvKey;
+  readonly value: string;
+
+  constructor(input: {
+    code: DeploymentManagedRunnerSeedConfigErrorCode;
+    envName: DeploymentManagedRunnerEndpointProtocolEnvKey;
+    value: string;
+  }) {
+    super(`${input.code}:${input.envName}`);
+    this.name = 'DeploymentManagedRunnerSeedConfigError';
+    this.code = input.code;
+    this.envName = input.envName;
+    this.value = input.value;
+  }
+}
 
 function trimmed(value: string | undefined): string {
   return value?.trim() ?? '';
@@ -58,6 +84,23 @@ function parseEndpointUpstreamProtocol(value: string): EndpointUpstreamProtocol 
   return DEPLOYMENT_MANAGED_RUNNER_ENDPOINT_PROTOCOLS.has(value as EndpointUpstreamProtocol)
     ? value as EndpointUpstreamProtocol
     : undefined;
+}
+
+function endpointUpstreamProtocolFromEnv(env: SeedEnv): EndpointUpstreamProtocol | undefined {
+  for (const envName of DEPLOYMENT_MANAGED_RUNNER_ENDPOINT_PROTOCOL_ENV_KEYS) {
+    const value = trimmed(env[envName]);
+    if (!value) continue;
+    const upstreamProtocol = parseEndpointUpstreamProtocol(value);
+    if (!upstreamProtocol) {
+      throw new DeploymentManagedRunnerSeedConfigError({
+        code: 'operator_endpoint_protocol_invalid',
+        envName,
+        value,
+      });
+    }
+    return upstreamProtocol;
+  }
+  return undefined;
 }
 
 function normalizeEndpointName(value: string): string {
@@ -257,10 +300,7 @@ export function deploymentManagedRunnerSeedInputFromEnv(
         || 'deployment-agent-task',
       baseUrl: trimmed(env.DEPLOYMENT_DEFAULT_ENDPOINT_BASE_URL)
         || trimmed(env.PRESET_ANTHROPIC_ENDPOINT_BASE_URL),
-      upstreamProtocol: parseEndpointUpstreamProtocol(
-        trimmed(env.DEPLOYMENT_DEFAULT_ENDPOINT_PROTOCOL)
-        || trimmed(env.PRESET_ANTHROPIC_ENDPOINT_PROTOCOL),
-      ),
+      upstreamProtocol: endpointUpstreamProtocolFromEnv(env),
       model: trimmed(env.DEPLOYMENT_DEFAULT_ENDPOINT_MODEL)
         || trimmed(env.PRESET_ENDPOINT_MODEL),
       credentialName: trimmed(env.DEPLOYMENT_DEFAULT_CREDENTIAL_NAME)

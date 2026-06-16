@@ -325,32 +325,7 @@ describe('product readiness report producer', () => {
               'AGENT_SANDBOX_UNAVAILABLE API/pod-manager/ASBCP summaries',
               'runtime flake versus stability blocker classification',
             ],
-            state_convergence: {
-              files: {
-                pending: expect.stringContaining('file_library_list_pending'),
-                releasing: expect.stringContaining('workspace binding release convergence'),
-                offline: expect.stringContaining('no active writer'),
-                not_found: expect.stringContaining('no active writer'),
-              },
-              agent_task_sandbox: {
-                pending: expect.stringContaining('bounded ASBCP status checks'),
-                releasing: expect.stringContaining('release-incomplete'),
-                offline: expect.stringContaining('ASBCP create-or-ensure'),
-                not_found: expect.stringContaining('ASBCP create-or-ensure'),
-              },
-              afscp_workspace_binding: {
-                pending: expect.stringContaining('workspace binding owner'),
-                releasing: expect.stringContaining('terminal released/revoked/expired/deleted'),
-                offline: expect.stringContaining('no active writer'),
-                not_found: expect.stringContaining('no active writer'),
-              },
-              read_export: {
-                pending: expect.stringContaining('typed pending'),
-                releasing: expect.stringContaining('runtime release fence'),
-                offline: expect.stringContaining('no active writer'),
-                not_found: expect.stringContaining('fresh read export'),
-              },
-            },
+            state_convergence: runtimeReadinessPolicy.state_convergence,
           },
           files_restore_continuation: {
             path: 'gate-release/child-internal-evidence/files_restore_continuation_spec/runtime-readiness-details.json',

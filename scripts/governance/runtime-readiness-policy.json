@@ -16,10 +16,10 @@
   ],
   "state_convergence": {
     "files": {
-      "pending": "Return typed file_library_list_pending, continue runtime-access release convergence, and recheck without reading a stale projection.",
-      "releasing": "Wait for workspace binding release convergence before creating a read export; return typed pending while release is non-terminal.",
-      "offline": "Treat as no active writer for Files read export and create or read the clean read export through the Files path only.",
-      "not_found": "Treat as no active writer for Files read export; do not synthesize an executable connector."
+      "pending": "For Files browse/list/download/live read, observe the storage payload root and return typed pending/failed (file_library_list_pending/file_library_list_failed) when the payload root projection is unavailable; do not trigger runtime-access release or read a stale projection.",
+      "releasing": "For restore/quiesced save or restore operations, continue release/quiesce convergence and return typed pending while non-terminal; Files browse/list/download/live read still observes the payload root without release-before-read.",
+      "offline": "Files browse/list/download/live read observes the storage payload root directly; do not create a read export or synthesize runtime access.",
+      "not_found": "Files browse/list/download/live read observes the storage payload root directly; return typed pending/failed when projection is unavailable and do not synthesize an executable connector."
     },
     "agent_task_sandbox": {
       "pending": "Continue bounded ASBCP status checks until Running, Failed, or timeout.",
@@ -28,16 +28,16 @@
       "not_found": "Call ASBCP create-or-ensure for the workload, then continue status checks until Running, Failed, or timeout."
     },
     "afscp_workspace_binding": {
-      "pending": "Return typed runtime readiness pending and recheck through the workspace binding owner before Files read export proceeds.",
-      "releasing": "Continue release convergence through the workspace binding owner until terminal released/revoked/expired/deleted.",
-      "offline": "Treat as no active writer for Files read export; executable attachment must use the Agent Task sandbox owner path.",
-      "not_found": "Treat as no active writer for Files read export; executable attachment must use the Agent Task sandbox owner path."
+      "pending": "Files browse/list/download/live read observes the storage payload root and does not wait on or start workspace-binding release; return typed pending/failed only if the payload root projection is unavailable. Explicit restore/quiesced operations continue through the workspace binding owner.",
+      "releasing": "Continue release convergence through the workspace binding owner until terminal released/revoked/expired/deleted for explicit restore/quiesced operations; Files browse/list/download/live read observes the payload root instead of waiting for terminal release.",
+      "offline": "Treat as no active writer; Files browse/list/download/live read observes the payload root and executable attachment must use the Agent Task sandbox owner path.",
+      "not_found": "Treat as no active writer; Files browse/list/download/live read observes the payload root and executable attachment must use the Agent Task sandbox owner path."
     },
     "read_export": {
-      "pending": "Return typed pending, trigger or continue runtime-access release, and keep the pending read export warm for the caller next poll.",
-      "releasing": "Wait for runtime release fence or export invalidation, and avoid revoke/create loops while convergence is non-terminal.",
-      "offline": "Create or reuse the read export only after no active writer is observed.",
-      "not_found": "Create a fresh read export if runtime access is clean; otherwise return typed pending."
+      "pending": "Return typed pending/failed for unavailable payload root projection; do not trigger runtime-access release or keep a pending read export warm for Files browse/list/download/live read.",
+      "releasing": "Runtime release fences apply only to explicit restore/quiesced operations; Files browse/list/download/live read does not wait for read-export release convergence.",
+      "offline": "Do not create or reuse a read export for Files browse/list/download/live read; observe the payload root through live storage.",
+      "not_found": "Do not create a fresh read export for Files browse/list/download/live read; observe the payload root through live storage or return typed pending/failed when projection is unavailable."
     }
   },
   "classification_rules": {

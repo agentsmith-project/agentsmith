@@ -44,6 +44,10 @@ function assertStringField(
   assert(typeof record[field] === 'string' && record[field].trim().length > 0, message);
 }
 
+function normalizePolicyText(...values: readonly string[]): string {
+  return values.join('\n').toLowerCase();
+}
+
 const packageJson = readJson('package.json') as { scripts?: Record<string, string> };
 const releaseCampaignIo = readFileSync(path.join(rootDir, 'scripts/governance/release-campaign-io.ts'), 'utf8');
 const runtimeReadinessPolicy = readJson('scripts/governance/runtime-readiness-policy.json');
@@ -158,6 +162,37 @@ function main(): void {
       );
     }
   }
+  const liveFilesReadPolicy = normalizePolicyText(
+    gateReleaseStep.observationPolicy.stateConvergence.files.pending,
+    gateReleaseStep.observationPolicy.stateConvergence.files.offline,
+    gateReleaseStep.observationPolicy.stateConvergence.files.not_found,
+    gateReleaseStep.observationPolicy.stateConvergence.afscp_workspace_binding.pending,
+    gateReleaseStep.observationPolicy.stateConvergence.read_export.pending,
+    gateReleaseStep.observationPolicy.stateConvergence.read_export.offline,
+    gateReleaseStep.observationPolicy.stateConvergence.read_export.not_found,
+  );
+  assert(
+    liveFilesReadPolicy.includes('list/download/live read')
+      && liveFilesReadPolicy.includes('payload root')
+      && liveFilesReadPolicy.includes('do not trigger runtime-access release')
+      && liveFilesReadPolicy.includes('typed pending/failed'),
+    'Files browse/list/download/live read policy must observe payload root, return typed pending/failed for unavailable projection, and avoid release-before-read.',
+  );
+  assert(
+    !liveFilesReadPolicy.includes('trigger or continue runtime-access release')
+      && !liveFilesReadPolicy.includes('before files read export proceeds'),
+    'Files browse/list/download/live read policy must not drift back to release-before-read or read-export gating.',
+  );
+  const filesRestoreQuiescePolicy = normalizePolicyText(
+    gateReleaseStep.observationPolicy.stateConvergence.files.releasing,
+    gateReleaseStep.observationPolicy.stateConvergence.afscp_workspace_binding.releasing,
+    gateReleaseStep.observationPolicy.stateConvergence.read_export.releasing,
+  );
+  assert(
+    filesRestoreQuiescePolicy.includes('restore/quiesced')
+      && filesRestoreQuiescePolicy.includes('release'),
+    'Files runtime release convergence must stay scoped to restore/quiesced operations.',
+  );
   const classificationRules = runtimeReadinessPolicy.classification_rules;
   assert(isRecord(classificationRules), 'runtime readiness policy must define classification_rules.');
   for (const field of ['clean_pass', 'runtime_flake', 'stability_blocker']) {

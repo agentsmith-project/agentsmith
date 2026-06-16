@@ -25,6 +25,10 @@ function validRuntimeReadinessPolicyInput(): Record<string, unknown> {
   };
 }
 
+function normalizePolicyText(...values: readonly string[]): string {
+  return values.join('\n').toLowerCase();
+}
+
 describe('current verification campaign manifest', () => {
   it('defines release-full as the AgentSmith product-side readiness campaign truth', () => {
     const releaseFull = findCurrentVerificationCampaignById('release-full');
@@ -203,6 +207,38 @@ describe('current verification campaign manifest', () => {
 
     expect(() => validateRuntimeReadinessObservationPolicy(missingState))
       .toThrow(/state_convergence\.read_export\.pending/u);
+  });
+
+  it('keeps Files browse reads on live storage without release-before-read', () => {
+    const releaseFull = findCurrentVerificationCampaignById('release-full');
+    const policy = releaseFull?.steps.find((step) => step.id === 'gate-release')?.observationPolicy;
+    if (!policy) {
+      throw new Error('Missing gate-release observation policy.');
+    }
+
+    const liveReadText = normalizePolicyText(
+      policy.stateConvergence.files.pending,
+      policy.stateConvergence.files.offline,
+      policy.stateConvergence.files.not_found,
+      policy.stateConvergence.afscp_workspace_binding.pending,
+      policy.stateConvergence.read_export.pending,
+      policy.stateConvergence.read_export.offline,
+      policy.stateConvergence.read_export.not_found,
+    );
+    expect(liveReadText).toContain('list/download/live read');
+    expect(liveReadText).toContain('payload root');
+    expect(liveReadText).toContain('do not trigger runtime-access release');
+    expect(liveReadText).toContain('typed pending/failed');
+    expect(liveReadText).not.toContain('trigger or continue runtime-access release');
+    expect(liveReadText).not.toContain('before files read export proceeds');
+
+    const restoreQuiesceText = normalizePolicyText(
+      policy.stateConvergence.files.releasing,
+      policy.stateConvergence.afscp_workspace_binding.releasing,
+      policy.stateConvergence.read_export.releasing,
+    );
+    expect(restoreQuiesceText).toContain('restore/quiesced');
+    expect(restoreQuiesceText).toContain('release');
   });
 
   it('separates executable evidence owners from the aggregate-only readiness check', () => {

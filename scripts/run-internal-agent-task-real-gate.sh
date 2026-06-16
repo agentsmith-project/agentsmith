@@ -1959,6 +1959,13 @@ else
 fi
 info "internal screenshots and review artifacts will be written to:"
 info "  ${INTERNAL_VISUAL_ARTIFACT_DIR}"
+
+internal_spec_universal_proxy_port() {
+  local spec_api_port="$1"
+
+  printf '%s\n' "$((spec_api_port + 19000))"
+}
+
 run_internal_spec() {
   local spec="$1"
   local spec_api_port="$2"
@@ -1969,10 +1976,12 @@ run_internal_spec() {
   local spec_output_log
   local spec_agent_execution_ws_base_url
   local spec_kubeconfig
+  local spec_proxy_port
   spec_log_dir="$(dirname "${spec_state_file}")/integration"
   spec_output_log="${spec_log_dir}/playwright-output.log"
   spec_agent_execution_ws_base_url="ws://${KIND_GATEWAY}:${spec_api_port}"
   spec_kubeconfig="$(internal_real_gate_asbcp_kubeconfig_path)"
+  spec_proxy_port="$(internal_spec_universal_proxy_port "${spec_api_port}")"
   mkdir -p "${spec_log_dir}"
   (
     cd "${ROOT_DIR}" && \
@@ -2035,6 +2044,7 @@ run_internal_spec() {
       KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}" \
       INTEGRATION_API_PORT="${spec_api_port}" \
       INTEGRATION_WEB_PORT="${spec_web_port}" \
+      INTEGRATION_UNIVERSAL_PROXY_PORT="${spec_proxy_port}" \
       INTEGRATION_API_BASE="http://127.0.0.1:${spec_api_port}" \
       INTEGRATION_BASE_URL="http://localhost:${spec_web_port}" \
       INTEGRATION_LOG_DIR="${spec_log_dir}" \

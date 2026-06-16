@@ -1618,6 +1618,38 @@ describe('internal backend-real gate runtime contract', () => {
     );
   });
 
+  it('passes isolated universal proxy ports into nested backend-real child specs', () => {
+    const agentTaskGate = read('scripts/run-internal-agent-task-real-gate.sh');
+    const runInternalSpec = shellFunctionBody(agentTaskGate, 'run_internal_spec');
+    const skillsFunction = shellFunctionBody(agentTaskGate, 'run_skills_runtime_specs');
+    const compositeFunction = shellFunctionBody(agentTaskGate, 'run_core_composite_specs');
+
+    expect(agentTaskGate).toContain('internal_spec_universal_proxy_port()');
+    expect(runInternalSpec).toContain('local spec_proxy_port');
+    expect(runInternalSpec).toContain('spec_proxy_port="$(internal_spec_universal_proxy_port "${spec_api_port}")"');
+    expect(runInternalSpec).toContain('INTEGRATION_UNIVERSAL_PROXY_PORT="${spec_proxy_port}" \\');
+    expect(runInternalSpec.indexOf('INTEGRATION_UNIVERSAL_PROXY_PORT="${spec_proxy_port}" \\')).toBeLessThan(
+      runInternalSpec.indexOf('bash scripts/run-integration-e2e-full.sh "${spec}" "$@"'),
+    );
+
+    const proxyOffsetMatch = agentTaskGate.match(/\$\(\(spec_api_port \+ (\d+)\)\)/u);
+    expect(proxyOffsetMatch?.[1]).toBe('19000');
+    const proxyOffset = Number(proxyOffsetMatch?.[1]);
+    expect(20064 + proxyOffset).toBe(39064);
+    expect(23079 + proxyOffset).toBe(42079);
+
+    expect(agentTaskGate).toContain('API_PORT="${INTEGRATION_API_PORT:-20072}"');
+    expect(skillsFunction).toContain('"${runner_api_port}" "${runner_web_port}"');
+    expect(skillsFunction).toContain('23079 33079');
+    expect(compositeFunction).toContain('run_skills_runtime_specs "${API_PORT}" "${WEB_PORT}"');
+    expect(compositeFunction).toContain('run_internal_reclaim_spec "$((API_PORT + 1))" "$((WEB_PORT + 1))"');
+    expect(new Set([
+      20072 + proxyOffset,
+      23079 + proxyOffset,
+      (20072 + 1) + proxyOffset,
+    ])).toEqual(new Set([39072, 42079, 39073]));
+  });
+
   it('writes only non-sensitive AFSCP ASBCP identity into isolated sandbox state instead of raw tokens', () => {
     const helper = read('scripts/lib/internal-backend-real-gate.sh');
     const state = renderSandboxState({
